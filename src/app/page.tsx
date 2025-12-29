@@ -214,7 +214,7 @@ export default function HomePage() {
                       </div>
 
                       <p className="text-xs font-medium text-text-tertiary mb-2">Category: {bounty.category}</p>
-                      <h3 className="text-lg font-semibold text-text-primary mb-4 line-clamp-2 min-h-14">
+                      <h3 className="text-lg font-semibold text-text-primary mb-4 line-clamp-2 min-h-14 wrap-break-word">
                         {bounty.title}
                       </h3>
 

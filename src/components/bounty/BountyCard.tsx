@@ -86,7 +86,7 @@ export function BountyCard({
         )}
 
         {/* Card Content */}
-        <div className="flex flex-col h-full p-5">
+        <div className="flex flex-col h-full p-5 min-w-0">
           {/* Top Row: Category + Status */}
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className={cn(
@@ -109,11 +109,6 @@ export function BountyCard({
           <h3 className="text-base font-semibold text-text-primary leading-snug mb-2 group-hover:text-accent-green transition-colors">
             {bounty.title}
           </h3>
-
-          {/* Creator */}
-          <p className="text-xs text-text-tertiary mb-4">
-            by <span className="text-text-secondary">{bounty.creator?.username || "Anonymous"}</span>
-          </p>
 
           {/* Spacer */}
           <div className="flex-1 min-h-4" />
