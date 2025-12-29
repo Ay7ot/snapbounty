@@ -14,13 +14,17 @@ import {
     Copy,
     Check,
     Info,
+    Plus,
+    Link2,
+    Smartphone,
 } from "lucide-react";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
 import { useMintUsdc } from "@/hooks/useMintUsdc";
 import { useUsdcBalance } from "@/hooks/useContract";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
+import { BASE_SEPOLIA_NETWORK, CHAINLIST_BASE_SEPOLIA_URL } from "@/config/wagmi";
 
 const steps = [
     {
@@ -68,9 +72,9 @@ const faucets = [
 ];
 
 export default function TestnetGuidePage() {
-    const { address, isConnected } = useAccount();
+    const { address, isConnected, connector } = useAccount();
     const chainId = useChainId();
-    const { switchChain } = useSwitchChain();
+    const { switchChain, isPending: isSwitching, error: switchError } = useSwitchChain();
     const {
         mint,
         isPending: isMinting,
@@ -82,6 +86,9 @@ export default function TestnetGuidePage() {
     } = useMintUsdc();
     const { formattedBalance, refetch: refetchBalance } = useUsdcBalance(address);
     const [copied, setCopied] = useState(false);
+    const [isAddingNetwork, setIsAddingNetwork] = useState(false);
+    const [networkAddError, setNetworkAddError] = useState<string | null>(null);
+    const [networkAddSuccess, setNetworkAddSuccess] = useState(false);
 
     const isBaseSepolia = chainId === baseSepolia.id;
 
@@ -96,11 +103,75 @@ export default function TestnetGuidePage() {
         }, 1000);
     };
 
-    const handleSwitchChain = () => {
+    const handleSwitchChain = useCallback(async () => {
         if (switchChain) {
-            switchChain({ chainId: baseSepolia.id });
+            try {
+                switchChain({ chainId: baseSepolia.id });
+            } catch (error) {
+                console.error("Failed to switch chain:", error);
+            }
         }
-    };
+    }, [switchChain]);
+
+    // Add Base Sepolia network to wallet manually
+    const handleAddNetwork = useCallback(async () => {
+        setIsAddingNetwork(true);
+        setNetworkAddError(null);
+        setNetworkAddSuccess(false);
+
+        try {
+            // Get the provider from the connector
+            const provider = await connector?.getProvider();
+            
+            if (!provider || typeof (provider as { request?: unknown }).request !== 'function') {
+                throw new Error("No compatible wallet provider found. Please use a wallet that supports adding networks.");
+            }
+
+            // Try to switch to the chain first (in case it's already added)
+            try {
+                await (provider as { request: (args: { method: string; params: unknown[] }) => Promise<unknown> }).request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: BASE_SEPOLIA_NETWORK.chainId }],
+                });
+                setNetworkAddSuccess(true);
+                return;
+            } catch (switchError: unknown) {
+                // If the error is because the chain hasn't been added, we'll add it
+                const errorCode = (switchError as { code?: number })?.code;
+                if (errorCode !== 4902 && errorCode !== -32603) {
+                    throw switchError;
+                }
+            }
+
+            // Add the chain
+            await (provider as { request: (args: { method: string; params: unknown[] }) => Promise<unknown> }).request({
+                method: 'wallet_addEthereumChain',
+                params: [
+                    {
+                        chainId: BASE_SEPOLIA_NETWORK.chainId,
+                        chainName: BASE_SEPOLIA_NETWORK.chainName,
+                        nativeCurrency: BASE_SEPOLIA_NETWORK.nativeCurrency,
+                        rpcUrls: BASE_SEPOLIA_NETWORK.rpcUrls,
+                        blockExplorerUrls: BASE_SEPOLIA_NETWORK.blockExplorerUrls,
+                    },
+                ],
+            });
+            setNetworkAddSuccess(true);
+        } catch (error: unknown) {
+            console.error("Failed to add network:", error);
+            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+            
+            if (errorMessage.includes("User rejected") || errorMessage.includes("rejected")) {
+                setNetworkAddError("You rejected the request. Please try again.");
+            } else if (errorMessage.includes("already pending")) {
+                setNetworkAddError("A request is already pending. Please check your wallet.");
+            } else {
+                setNetworkAddError("Failed to add network. Try using Chainlist instead.");
+            }
+        } finally {
+            setIsAddingNetwork(false);
+        }
+    }, [connector]);
 
     const copyAddress = () => {
         if (address) {
@@ -108,6 +179,12 @@ export default function TestnetGuidePage() {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (
@@ -202,16 +279,81 @@ export default function TestnetGuidePage() {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-4 bg-accent-orange/10 rounded-lg border border-accent-orange/30">
-                                                        <div className="flex items-center justify-between mb-3">
-                                                            <div className="flex items-center gap-2 text-accent-orange">
+                                                    <div className="space-y-3">
+                                                        {/* Current Network Warning */}
+                                                        <div className="p-4 bg-accent-orange/10 rounded-lg border border-accent-orange/30">
+                                                            <div className="flex items-center gap-2 text-accent-orange mb-3">
                                                                 <AlertCircle className="w-5 h-5" />
-                                                                <span className="text-sm font-medium">Switch to Base Sepolia</span>
+                                                                <span className="text-sm font-medium">Wrong Network Detected</span>
                                                             </div>
+                                                            <p className="text-xs text-text-secondary mb-3">
+                                                                You need to be on Base Sepolia testnet to use SnapBounty.
+                                                            </p>
+                                                            
+                                                            {/* Switch Network Button */}
+                                                            <Button 
+                                                                onClick={handleSwitchChain} 
+                                                                size="sm" 
+                                                                className="w-full mb-2"
+                                                                disabled={isSwitching}
+                                                            >
+                                                                {isSwitching ? "Switching..." : "Switch Network"}
+                                                            </Button>
+
+                                                            {switchError && (
+                                                                <p className="text-xs text-red-400 mt-2">
+                                                                    {switchError.message.includes("rejected") 
+                                                                        ? "Request rejected. Please try again." 
+                                                                        : "Network not found. Try adding it below."}
+                                                                </p>
+                                                            )}
                                                         </div>
-                                                        <Button onClick={handleSwitchChain} size="sm" className="w-full">
-                                                            Switch Network
-                                                        </Button>
+
+                                                        {/* Add Network Manually */}
+                                                        <div className="p-4 bg-bg-primary/50 rounded-lg border border-border-default">
+                                                            <div className="flex items-center gap-2 text-text-primary mb-3">
+                                                                <Plus className="w-4 h-4" />
+                                                                <span className="text-sm font-medium">Add Base Sepolia to Wallet</span>
+                                                            </div>
+                                                            
+                                                            <div className="space-y-2">
+                                                                <Button 
+                                                                    onClick={handleAddNetwork} 
+                                                                    variant="secondary"
+                                                                    size="sm" 
+                                                                    className="w-full"
+                                                                    disabled={isAddingNetwork}
+                                                                >
+                                                                    {isAddingNetwork ? "Adding Network..." : "Add Network Automatically"}
+                                                                </Button>
+
+                                                                <a
+                                                                    href={CHAINLIST_BASE_SEPOLIA_URL}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="flex items-center justify-center gap-2 w-full p-2 text-sm text-text-secondary hover:text-accent-green transition-colors"
+                                                                >
+                                                                    <Link2 className="w-4 h-4" />
+                                                                    Or use Chainlist
+                                                                    <ExternalLink className="w-3 h-3" />
+                                                                </a>
+                                                            </div>
+
+                                                            {networkAddSuccess && (
+                                                                <div className="mt-2 p-2 bg-accent-green/10 rounded border border-accent-green/30">
+                                                                    <p className="text-xs text-accent-green flex items-center gap-1">
+                                                                        <CheckCircle2 className="w-3 h-3" />
+                                                                        Network added successfully!
+                                                                    </p>
+                                                                </div>
+                                                            )}
+
+                                                            {networkAddError && (
+                                                                <p className="text-xs text-red-400 mt-2">
+                                                                    {networkAddError}
+                                                                </p>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -397,6 +539,154 @@ export default function TestnetGuidePage() {
                                             <span className="text-sm text-text-primary font-medium">Base Sepolia</span>
                                             <Badge variant="active">Testnet</Badge>
                                         </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </section>
+
+                    {/* Manual Network Setup Section */}
+                    <section className="mb-16">
+                        <Card variant="elevated">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Smartphone className="w-5 h-5 text-accent-blue" />
+                                    Manual Network Setup for Mobile
+                                </CardTitle>
+                                <CardDescription>
+                                    Having trouble switching networks? Follow these step-by-step guides to add Base Sepolia manually.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-6">
+                                    {/* Network Details */}
+                                    <div className="p-4 bg-bg-primary/50 rounded-lg border border-border-default">
+                                        <h4 className="font-semibold text-text-primary mb-3">Network Details</h4>
+                                        <div className="grid md:grid-cols-2 gap-4 text-sm">
+                                            <div>
+                                                <p className="text-text-tertiary">Network Name</p>
+                                                <p className="text-text-primary font-mono">Base Sepolia</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-text-tertiary">Chain ID</p>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="text-text-primary font-mono">84532</code>
+                                                    <button
+                                                        onClick={() => copyToClipboard("84532")}
+                                                        className="p-1 hover:bg-bg-tertiary rounded transition-colors"
+                                                    >
+                                                        {copied ? <Check className="w-3 h-3 text-accent-green" /> : <Copy className="w-3 h-3 text-text-tertiary" />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-text-tertiary">RPC URL</p>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="text-text-primary font-mono text-xs break-all">https://sepolia.base.org</code>
+                                                    <button
+                                                        onClick={() => copyToClipboard("https://sepolia.base.org")}
+                                                        className="p-1 hover:bg-bg-tertiary rounded transition-colors shrink-0"
+                                                    >
+                                                        {copied ? <Check className="w-3 h-3 text-accent-green" /> : <Copy className="w-3 h-3 text-text-tertiary" />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-text-tertiary">Block Explorer</p>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="text-text-primary font-mono text-xs">sepolia.basescan.org</code>
+                                                    <a
+                                                        href="https://sepolia.basescan.org"
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="p-1 hover:bg-bg-tertiary rounded transition-colors"
+                                                    >
+                                                        <ExternalLink className="w-3 h-3 text-text-tertiary" />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* MetaMask Setup */}
+                                    <div className="space-y-4">
+                                        <h4 className="font-semibold text-text-primary">MetaMask Setup</h4>
+                                        <div className="space-y-3">
+                                            <div className="flex gap-4">
+                                                <div className="shrink-0 w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center">
+                                                    <span className="text-sm font-bold text-accent-green">1</span>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-medium text-text-primary mb-1">Open MetaMask</h5>
+                                                    <p className="text-sm text-text-secondary">
+                                                        Tap the MetaMask icon on your mobile home screen to open the app.
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <div className="shrink-0 w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center">
+                                                    <span className="text-sm font-bold text-accent-green">2</span>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-medium text-text-primary mb-1">Access Network Menu</h5>
+                                                    <p className="text-sm text-text-secondary">
+                                                        Tap the network dropdown at the top (it shows your current network).
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <div className="shrink-0 w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center">
+                                                    <span className="text-sm font-bold text-accent-green">3</span>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-medium text-text-primary mb-1">Add Network</h5>
+                                                    <p className="text-sm text-text-secondary mb-2">
+                                                        Scroll to the bottom and tap "Add Network".
+                                                    </p>
+                                                    <Button
+                                                        onClick={() => copyToClipboard("Base Sepolia\n84532\nhttps://sepolia.base.org\nETH\nhttps://sepolia.basescan.org")}
+                                                        variant="secondary"
+                                                        size="sm"
+                                                    >
+                                                        Copy Network Details
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <div className="shrink-0 w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center">
+                                                    <span className="text-sm font-bold text-accent-green">4</span>
+                                                </div>
+                                                <div>
+                                                    <h5 className="font-medium text-text-primary mb-1">Enter Details</h5>
+                                                    <p className="text-sm text-text-secondary">
+                                                        Fill in the network details and save. Switch to Base Sepolia when prompted.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Alternative Method */}
+                                    <div className="p-4 bg-accent-blue/10 rounded-lg border border-accent-blue/30">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Link2 className="w-5 h-5 text-accent-blue" />
+                                            <h4 className="font-semibold text-text-primary">Quick Setup Alternative</h4>
+                                        </div>
+                                        <p className="text-sm text-text-secondary mb-4">
+                                            The easiest way to add Base Sepolia is through Chainlist - it handles everything for you.
+                                        </p>
+                                        <a
+                                            href={CHAINLIST_BASE_SEPOLIA_URL}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 px-4 py-2 bg-accent-blue hover:bg-accent-blue/90 text-white rounded-lg text-sm font-medium transition-colors"
+                                        >
+                                            Add via Chainlist
+                                            <ExternalLink className="w-4 h-4" />
+                                        </a>
                                     </div>
                                 </div>
                             </CardContent>
