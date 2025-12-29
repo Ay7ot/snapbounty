@@ -1,0 +1,31 @@
+{
+  "name": "snapbounty-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for SnapBounty escrow platform",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:coverage": "hardhat coverage",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network baseSepolia",
+    "deploy:mock": "hardhat run scripts/deploy-with-mock.ts --network baseSepolia",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network base",
+    "verify": "hardhat verify",
+    "clean": "hardhat clean"
+  },
+  "keywords": [
+    "ethereum",
+    "solidity",
+    "bounty",
+    "escrow"
+  ],
+  "author": "SnapBounty",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}
