@@ -136,29 +136,29 @@ export default function TestnetGuidePage() {
                         </p>
 
                         {isConnected && (
-                            <div className="mt-8 inline-flex items-center gap-4 px-6 py-3 bg-bg-tertiary rounded-lg border border-border-default">
-                                <div className="flex items-center gap-2">
+                            <div className="mt-8 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-6 py-3 bg-bg-tertiary rounded-lg border border-border-default max-w-full overflow-hidden">
+                                <div className="flex items-center gap-2 shrink-0">
                                     <div className="w-2 h-2 rounded-full bg-accent-green"></div>
-                                    <span className="text-sm text-text-secondary">Connected</span>
+                                    <span className="text-sm text-text-secondary whitespace-nowrap">Connected</span>
                                 </div>
-                                <div className="h-4 w-px bg-border-default"></div>
+                                <div className="hidden sm:block h-4 w-px bg-border-default shrink-0"></div>
                                 <button
                                     onClick={copyAddress}
-                                    className="flex items-center gap-2 text-sm text-text-primary hover:text-accent-green transition-colors"
+                                    className="flex items-center gap-2 text-sm text-text-primary hover:text-accent-green transition-colors shrink-0"
                                 >
-                                    {address?.slice(0, 6)}...{address?.slice(-4)}
+                                    <span className="font-mono break-all">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
                                     {copied ? (
-                                        <Check className="w-4 h-4 text-accent-green" />
+                                        <Check className="w-4 h-4 text-accent-green shrink-0" />
                                     ) : (
-                                        <Copy className="w-4 h-4" />
+                                        <Copy className="w-4 h-4 shrink-0" />
                                     )}
                                 </button>
                                 {!isBaseSepolia && (
                                     <>
-                                        <div className="h-4 w-px bg-border-default"></div>
-                                        <div className="flex items-center gap-2">
-                                            <AlertCircle className="w-4 h-4 text-accent-orange" />
-                                            <span className="text-sm text-accent-orange">Wrong Network</span>
+                                        <div className="hidden sm:block h-4 w-px bg-border-default shrink-0"></div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <AlertCircle className="w-4 h-4 text-accent-orange shrink-0" />
+                                            <span className="text-sm text-accent-orange whitespace-nowrap">Wrong Network</span>
                                         </div>
                                     </>
                                 )}

@@ -284,7 +284,7 @@ export function BountyForm({ onSuccess }: BountyFormProps) {
             <div className="p-6">
               <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-2">Acceptance Criteria</p>
               <div className="p-4 rounded-lg bg-bg-elevated border border-border-default">
-                <p className="text-text-secondary text-sm whitespace-pre-wrap font-mono text-xs">
+                <p className="text-text-secondary whitespace-pre-wrap font-mono text-xs">
                   {formData.acceptanceCriteria}
                 </p>
               </div>
