@@ -214,7 +214,7 @@ export default function HomePage() {
                       </div>
 
                       <p className="text-xs font-medium text-text-tertiary mb-2">Category: {bounty.category}</p>
-                      <h3 className="text-lg font-semibold text-text-primary mb-4 line-clamp-2 min-h-[3.5rem]">
+                      <h3 className="text-lg font-semibold text-text-primary mb-4 line-clamp-2 min-h-14">
                         {bounty.title}
                       </h3>
 
@@ -246,7 +246,7 @@ export default function HomePage() {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-12 relative">
               {/* Connecting Line (Desktop) */}
-              <div className="hidden lg:block absolute top-8 left-0 w-full h-[1px] bg-linear-to-r from-transparent via-border-default to-transparent z-0" />
+              <div className="hidden lg:block absolute top-8 left-0 w-full h-1 bg-linear-to-r from-transparent via-border-default to-transparent z-0" />
 
               {steps.map((item, index) => (
                 <div key={item.step} className="relative z-10 group">
@@ -311,7 +311,7 @@ export default function HomePage() {
                 <div className="space-y-6">
                   {features.map((feature) => (
                     <div key={feature.title} className="flex gap-4">
-                      <div className="flex-shrink-0 w-12 h-12 rounded-md bg-accent-green/10 flex items-center justify-center">
+                      <div className="shrink-0 w-12 h-12 rounded-md bg-accent-green/10 flex items-center justify-center">
                         <feature.icon className="h-5 w-5 text-accent-green" />
                       </div>
                       <div>
@@ -354,7 +354,7 @@ export default function HomePage() {
                         </div>
                         <span className="text-sm font-medium">Network</span>
                       </div>
-                      <span className="font-bold text-text-primary text-sm">Base Mainnet</span>
+                      <span className="font-bold text-text-primary text-sm">Base Sepolia</span>
                     </div>
                   </div>
                 </div>
