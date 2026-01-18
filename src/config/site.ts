@@ -1,8 +1,30 @@
 export const siteConfig = {
     name: "SnapBounty",
+    tagline: "Micro Bounties, Instant Rewards",
     description:
-        "A lightweight marketplace where users post small tasks (bounties) and others complete them for fast rewards.",
-    url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+        "The decentralized marketplace for micro-tasks. Complete bounties, earn crypto, and build your on-chain reputation. Fast, secure, trustless.",
+    longDescription:
+        "SnapBounty is a Web3-powered micro-task marketplace where users post small tasks (bounties) and skilled hunters complete them for fast rewards in USDC. Built on Base network with secure smart contract escrow.",
+    url: process.env.NEXT_PUBLIC_APP_URL || "https://snapbounty.online",
+    domain: "snapbounty.online",
+
+    // SEO & Branding
+    keywords: [
+        "bounty platform",
+        "micro tasks",
+        "web3 freelance",
+        "crypto rewards",
+        "earn crypto",
+        "USDC payments",
+        "Base network",
+        "decentralized marketplace",
+        "smart contract escrow",
+        "development bounties",
+        "design tasks",
+        "blockchain jobs",
+        "freelance web3",
+        "on-chain reputation",
+    ],
 
     // Platform settings
     platformFee: 0.05, // 5% platform fee
@@ -43,6 +65,9 @@ export const siteConfig = {
         github: "https://github.com/snapbounty",
         discord: "https://discord.gg/snapbounty",
     },
+
+    // Contact
+    email: "hello@snapbounty.online",
 } as const;
 
 export type Category = (typeof siteConfig.categories)[number]["id"];
