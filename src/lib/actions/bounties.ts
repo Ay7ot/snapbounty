@@ -261,7 +261,7 @@ export async function getFeaturedBounties(limit: number = 4): Promise<Bounty[]> 
  */
 export async function updateBountyStatus(
   bountyId: string,
-  status: "open" | "claimed" | "submitted" | "completed" | "cancelled",
+  status: "open" | "claimed" | "submitted" | "completed" | "cancelled" | "disputed",
   hunterId?: string | null
 ): Promise<boolean> {
   try {
@@ -428,7 +428,7 @@ export async function getBountyByContractId(contractBountyId: number): Promise<B
 
 export async function updateBountyStatusByContractId(
   contractBountyId: number,
-  status: "open" | "claimed" | "submitted" | "completed" | "cancelled",
+  status: "open" | "claimed" | "submitted" | "completed" | "cancelled" | "disputed",
   hunterAddress?: string | null
 ): Promise<boolean> {
   try {

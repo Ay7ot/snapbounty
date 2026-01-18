@@ -7,10 +7,11 @@ describe("SnapBountyEscrow", function () {
   const REWARD = ethers.parseUnits("100", 6); // 100 USDC
   const PLATFORM_FEE_BPS = 500n; // 5%
   const BPS_DENOMINATOR = 10000n;
+  const DISPUTE_FEE = ethers.parseUnits("1", 6); // 1 USDC
 
   // Fixture to deploy contracts
   async function deployFixture() {
-    const [owner, treasury, creator, hunter, hunter2] = await ethers.getSigners();
+    const [owner, treasury, creator, hunter, hunter2, arbiter] = await ethers.getSigners();
 
     // Deploy MockUSDC - using deployContract for proper typing
     const usdc = await ethers.deployContract("MockUSDC");
@@ -20,53 +21,69 @@ describe("SnapBountyEscrow", function () {
       await usdc.getAddress(),
       treasury.address,
       PLATFORM_FEE_BPS,
+      arbiter.address,
+      DISPUTE_FEE,
     ]);
 
-    // Mint USDC to creator
+    // Mint USDC to creator and hunter
     await usdc.mint(creator.address, ethers.parseUnits("1000", 6));
+    await usdc.mint(hunter.address, ethers.parseUnits("100", 6)); // For dispute fees
 
-    // Approve escrow to spend creator's USDC
+    // Approve escrow to spend creator's and hunter's USDC
     await usdc.connect(creator).approve(await escrow.getAddress(), ethers.MaxUint256);
+    await usdc.connect(hunter).approve(await escrow.getAddress(), ethers.MaxUint256);
 
-    return { escrow, usdc, owner, treasury, creator, hunter, hunter2 };
+    return { escrow, usdc, owner, treasury, creator, hunter, hunter2, arbiter };
   }
 
   describe("Constructor", function () {
     it("Should set correct initial values", async function () {
-      const { escrow, usdc, treasury, owner } = await loadFixture(deployFixture);
+      const { escrow, usdc, treasury, owner, arbiter } = await loadFixture(deployFixture);
 
       expect(await escrow.usdc()).to.equal(await usdc.getAddress());
       expect(await escrow.treasury()).to.equal(treasury.address);
       expect(await escrow.platformFeeBps()).to.equal(PLATFORM_FEE_BPS);
+      expect(await escrow.arbiter()).to.equal(arbiter.address);
+      expect(await escrow.disputeFee()).to.equal(DISPUTE_FEE);
       expect(await escrow.owner()).to.equal(owner.address);
       expect(await escrow.bountyCount()).to.equal(0);
     });
 
     it("Should revert if USDC address is zero", async function () {
-      const [, treasury] = await ethers.getSigners();
+      const [, treasury, , , , arbiter] = await ethers.getSigners();
       const SnapBountyEscrow = await ethers.getContractFactory("SnapBountyEscrow");
 
       await expect(
-        SnapBountyEscrow.deploy(ethers.ZeroAddress, treasury.address, PLATFORM_FEE_BPS)
+        SnapBountyEscrow.deploy(ethers.ZeroAddress, treasury.address, PLATFORM_FEE_BPS, arbiter.address, DISPUTE_FEE)
       ).to.be.revertedWithCustomError(SnapBountyEscrow, "InvalidAddress");
     });
 
     it("Should revert if treasury address is zero", async function () {
-      const { usdc } = await loadFixture(deployFixture);
+      const { usdc, arbiter } = await loadFixture(deployFixture);
       const SnapBountyEscrow = await ethers.getContractFactory("SnapBountyEscrow");
 
       await expect(
-        SnapBountyEscrow.deploy(await usdc.getAddress(), ethers.ZeroAddress, PLATFORM_FEE_BPS)
+        SnapBountyEscrow.deploy(await usdc.getAddress(), ethers.ZeroAddress, PLATFORM_FEE_BPS, arbiter.address, DISPUTE_FEE)
       ).to.be.revertedWithCustomError(SnapBountyEscrow, "InvalidAddress");
     });
 
-    it("Should revert if fee is too high", async function () {
+    it("Should revert if arbiter address is zero", async function () {
       const { usdc } = await loadFixture(deployFixture);
       const [, treasury] = await ethers.getSigners();
       const SnapBountyEscrow = await ethers.getContractFactory("SnapBountyEscrow");
 
       await expect(
-        SnapBountyEscrow.deploy(await usdc.getAddress(), treasury.address, 1001) // > 10%
+        SnapBountyEscrow.deploy(await usdc.getAddress(), treasury.address, PLATFORM_FEE_BPS, ethers.ZeroAddress, DISPUTE_FEE)
+      ).to.be.revertedWithCustomError(SnapBountyEscrow, "InvalidAddress");
+    });
+
+    it("Should revert if fee is too high", async function () {
+      const { usdc, arbiter } = await loadFixture(deployFixture);
+      const [, treasury] = await ethers.getSigners();
+      const SnapBountyEscrow = await ethers.getContractFactory("SnapBountyEscrow");
+
+      await expect(
+        SnapBountyEscrow.deploy(await usdc.getAddress(), treasury.address, 1001, arbiter.address, DISPUTE_FEE) // > 10%
       ).to.be.revertedWithCustomError(SnapBountyEscrow, "InvalidFee");
     });
   });
@@ -359,7 +376,7 @@ describe("SnapBountyEscrow", function () {
       );
     });
 
-    it("Should revert if no deadline when claimed", async function () {
+    it("Should revert if no deadline when claimed and max duration not exceeded", async function () {
       const { escrow, creator, hunter } = await loadFixture(deployFixture);
 
       await escrow.connect(creator).createBounty(REWARD, 0);
@@ -369,6 +386,70 @@ describe("SnapBountyEscrow", function () {
         escrow,
         "BountyNotExpired"
       );
+    });
+
+    it("Should cancel claimed bounty after MAX_CLAIM_DURATION even without deadline", async function () {
+      const { escrow, usdc, creator, hunter } = await loadFixture(deployFixture);
+      const MAX_CLAIM_DURATION = 30 * 24 * 60 * 60; // 30 days in seconds
+
+      await escrow.connect(creator).createBounty(REWARD, 0); // No deadline
+      await escrow.connect(hunter).claimBounty(1);
+
+      // Should fail before max duration
+      await expect(escrow.connect(creator).cancelBounty(1)).to.be.revertedWithCustomError(
+        escrow,
+        "BountyNotExpired"
+      );
+
+      // Fast forward past MAX_CLAIM_DURATION
+      await time.increase(MAX_CLAIM_DURATION + 1);
+
+      // Should succeed now
+      const creatorBalanceBefore = await usdc.balanceOf(creator.address);
+      await expect(escrow.connect(creator).cancelBounty(1))
+        .to.emit(escrow, "BountyCancelled")
+        .withArgs(1, creator.address, REWARD);
+
+      expect(await usdc.balanceOf(creator.address)).to.equal(creatorBalanceBefore + REWARD);
+      expect(await escrow.activeClaim(hunter.address)).to.equal(0);
+
+      const bounty = await escrow.getBounty(1);
+      expect(bounty.status).to.equal(4); // Cancelled
+    });
+
+    it("Should cancel submitted bounty after MAX_CLAIM_DURATION", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const MAX_CLAIM_DURATION = 30 * 24 * 60 * 60;
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+
+      // Should fail before max duration
+      await expect(escrow.connect(creator).cancelBounty(1)).to.be.revertedWithCustomError(
+        escrow,
+        "BountyNotExpired"
+      );
+
+      // Fast forward past MAX_CLAIM_DURATION
+      await time.increase(MAX_CLAIM_DURATION + 1);
+
+      // Should succeed now
+      await expect(escrow.connect(creator).cancelBounty(1)).to.not.be.reverted;
+    });
+
+    it("Should use deadline if it expires before MAX_CLAIM_DURATION", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const deadline = (await time.latest()) + 86400; // 1 day from now (less than 30 days)
+
+      await escrow.connect(creator).createBounty(REWARD, deadline);
+      await escrow.connect(hunter).claimBounty(1);
+
+      // Fast forward past deadline but before MAX_CLAIM_DURATION
+      await time.increaseTo(deadline + 1);
+
+      // Should succeed because deadline passed
+      await expect(escrow.connect(creator).cancelBounty(1)).to.not.be.reverted;
     });
   });
 
@@ -424,6 +505,83 @@ describe("SnapBountyEscrow", function () {
 
       await expect(escrow.getBounty(0)).to.be.revertedWithCustomError(escrow, "InvalidBountyId");
       await expect(escrow.getBounty(999)).to.be.revertedWithCustomError(escrow, "InvalidBountyId");
+    });
+
+    it("Should return correct canBeCancelled for open bounty", async function () {
+      const { escrow, creator } = await loadFixture(deployFixture);
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+
+      const [canCancel, reason] = await escrow.canBeCancelled(1);
+      expect(canCancel).to.be.true;
+      expect(reason).to.equal("Bounty is open");
+    });
+
+    it("Should return correct canBeCancelled for claimed bounty", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+
+      const [canCancel, reason] = await escrow.canBeCancelled(1);
+      expect(canCancel).to.be.false;
+      expect(reason).to.equal("Bounty is active - wait for deadline or max claim duration");
+    });
+
+    it("Should return correct canBeCancelled after deadline", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const deadline = (await time.latest()) + 86400;
+
+      await escrow.connect(creator).createBounty(REWARD, deadline);
+      await escrow.connect(hunter).claimBounty(1);
+
+      await time.increaseTo(deadline + 1);
+
+      const [canCancel, reason] = await escrow.canBeCancelled(1);
+      expect(canCancel).to.be.true;
+      expect(reason).to.equal("Deadline has passed");
+    });
+
+    it("Should return correct canBeCancelled after MAX_CLAIM_DURATION", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const MAX_CLAIM_DURATION = 30 * 24 * 60 * 60;
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+
+      await time.increase(MAX_CLAIM_DURATION + 1);
+
+      const [canCancel, reason] = await escrow.canBeCancelled(1);
+      expect(canCancel).to.be.true;
+      expect(reason).to.equal("Claim duration exceeded");
+    });
+
+    it("Should return correct getClaimExpirationTime", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const MAX_CLAIM_DURATION = 30 * 24 * 60 * 60;
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+
+      // Not claimed yet - should return 0
+      expect(await escrow.getClaimExpirationTime(1)).to.equal(0);
+
+      await escrow.connect(hunter).claimBounty(1);
+
+      const bounty = await escrow.getBounty(1);
+      const expectedExpiration = BigInt(bounty.claimedAt) + BigInt(MAX_CLAIM_DURATION);
+
+      expect(await escrow.getClaimExpirationTime(1)).to.equal(expectedExpiration);
+    });
+
+    it("Should return deadline as expiration if earlier than MAX_CLAIM_DURATION", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+      const deadline = (await time.latest()) + 86400; // 1 day (earlier than 30 days)
+
+      await escrow.connect(creator).createBounty(REWARD, deadline);
+      await escrow.connect(hunter).claimBounty(1);
+
+      // Deadline is earlier, so it should be returned
+      expect(await escrow.getClaimExpirationTime(1)).to.equal(deadline);
     });
   });
 
@@ -507,6 +665,252 @@ describe("SnapBountyEscrow", function () {
 
       const bounty = await escrow.getBounty(1);
       expect(bounty.status).to.equal(3); // Completed
+    });
+  });
+
+  describe("Dispute Resolution", function () {
+    it("Should open a dispute after rejection", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      // Create bounty, claim, submit, and get rejected
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Not good enough");
+
+      // Now hunter can open dispute
+      const evidenceHash = ethers.keccak256(ethers.toUtf8Bytes("ipfs://QmEvidence123"));
+
+      await expect(escrow.connect(hunter).openDispute(1, evidenceHash))
+        .to.emit(escrow, "DisputeOpened")
+        .withArgs(1, hunter.address, evidenceHash, DISPUTE_FEE);
+
+      const bounty = await escrow.getBounty(1);
+      expect(bounty.status).to.equal(5); // Disputed
+
+      const dispute = await escrow.getDispute(1);
+      expect(dispute.initiator).to.equal(hunter.address);
+      expect(dispute.hunterEvidence).to.equal(evidenceHash);
+      expect(dispute.resolved).to.be.false;
+    });
+
+    it("Should revert dispute if no prior rejection", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+
+      await expect(
+        escrow.connect(hunter).openDispute(1, ethers.randomBytes(32))
+      ).to.be.revertedWithCustomError(escrow, "CannotDisputeYet");
+    });
+
+    it("Should allow creator to submit evidence", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Not acceptable");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      // Creator submits evidence
+      const creatorEvidence = ethers.keccak256(ethers.toUtf8Bytes("ipfs://QmCreatorEvidence"));
+
+      await expect(escrow.connect(creator).submitDisputeEvidence(1, creatorEvidence))
+        .to.emit(escrow, "DisputeEvidenceSubmitted")
+        .withArgs(1, creator.address, creatorEvidence);
+
+      const dispute = await escrow.getDispute(1);
+      expect(dispute.creatorEvidence).to.equal(creatorEvidence);
+    });
+
+    it("Should resolve dispute in hunter's favor", async function () {
+      const { escrow, usdc, creator, hunter, arbiter, treasury } = await loadFixture(deployFixture);
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      const hunterBalanceBefore = await usdc.balanceOf(hunter.address);
+      const treasuryBalanceBefore = await usdc.balanceOf(treasury.address);
+
+      // Arbiter resolves in hunter's favor (resolution = 1 = HunterWins)
+      await expect(escrow.connect(arbiter).resolveDispute(1, 1))
+        .to.emit(escrow, "DisputeResolved");
+
+      // Hunter gets reward - fee + dispute fee back
+      const fee = (REWARD * PLATFORM_FEE_BPS) / BPS_DENOMINATOR;
+      const expectedPayout = REWARD - fee + DISPUTE_FEE;
+
+      expect(await usdc.balanceOf(hunter.address)).to.equal(hunterBalanceBefore + expectedPayout);
+      expect(await usdc.balanceOf(treasury.address)).to.equal(treasuryBalanceBefore + fee);
+
+      const bounty = await escrow.getBounty(1);
+      expect(bounty.status).to.equal(3); // Completed
+
+      const dispute = await escrow.getDispute(1);
+      expect(dispute.resolved).to.be.true;
+      expect(dispute.resolution).to.equal(1); // HunterWins
+    });
+
+    it("Should resolve dispute in creator's favor", async function () {
+      const { escrow, usdc, creator, hunter, arbiter, treasury } = await loadFixture(deployFixture);
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      const creatorBalanceBefore = await usdc.balanceOf(creator.address);
+      const treasuryBalanceBefore = await usdc.balanceOf(treasury.address);
+
+      // Arbiter resolves in creator's favor (resolution = 2 = CreatorWins)
+      await escrow.connect(arbiter).resolveDispute(1, 2);
+
+      // Creator gets full refund, dispute fee goes to treasury
+      expect(await usdc.balanceOf(creator.address)).to.equal(creatorBalanceBefore + REWARD);
+      expect(await usdc.balanceOf(treasury.address)).to.equal(treasuryBalanceBefore + DISPUTE_FEE);
+    });
+
+    it("Should resolve dispute with split", async function () {
+      const { escrow, usdc, creator, hunter, arbiter } = await loadFixture(deployFixture);
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      const hunterBalanceBefore = await usdc.balanceOf(hunter.address);
+      const creatorBalanceBefore = await usdc.balanceOf(creator.address);
+
+      // Arbiter resolves with split (resolution = 3 = Split)
+      await escrow.connect(arbiter).resolveDispute(1, 3);
+
+      // 50/50 split, hunter gets dispute fee back
+      const halfReward = REWARD / 2n;
+      const halfFee = (REWARD * PLATFORM_FEE_BPS) / BPS_DENOMINATOR / 2n;
+
+      expect(await usdc.balanceOf(hunter.address)).to.equal(hunterBalanceBefore + halfReward - halfFee + DISPUTE_FEE);
+      expect(await usdc.balanceOf(creator.address)).to.equal(creatorBalanceBefore + (REWARD - halfReward));
+    });
+
+    it("Should revert if non-arbiter tries to resolve", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      await expect(
+        escrow.connect(creator).resolveDispute(1, 1)
+      ).to.be.revertedWithCustomError(escrow, "NotArbiter");
+    });
+
+    it("Should auto-resolve in hunter's favor after timeout", async function () {
+      const { escrow, usdc, creator, hunter, treasury } = await loadFixture(deployFixture);
+      const DISPUTE_RESOLUTION_WINDOW = 14 * 24 * 60 * 60; // 14 days
+
+      // Setup dispute
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+      await escrow.connect(hunter).openDispute(1, ethers.randomBytes(32));
+
+      // Fast forward past resolution window
+      await time.increase(DISPUTE_RESOLUTION_WINDOW + 1);
+
+      const hunterBalanceBefore = await usdc.balanceOf(hunter.address);
+
+      // Anyone can trigger auto-resolve
+      await escrow.autoResolveDispute(1);
+
+      // Hunter wins by default
+      const fee = (REWARD * PLATFORM_FEE_BPS) / BPS_DENOMINATOR;
+      const expectedPayout = REWARD - fee + DISPUTE_FEE;
+
+      expect(await usdc.balanceOf(hunter.address)).to.equal(hunterBalanceBefore + expectedPayout);
+
+      const dispute = await escrow.getDispute(1);
+      expect(dispute.resolved).to.be.true;
+      expect(dispute.resolution).to.equal(1); // HunterWins
+    });
+
+    it("Should track rejection count", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+      await escrow.connect(hunter).claimBounty(1);
+
+      // First rejection
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejection 1");
+
+      let bounty = await escrow.getBounty(1);
+      expect(bounty.rejectionCount).to.equal(1);
+
+      // Second rejection
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejection 2");
+
+      bounty = await escrow.getBounty(1);
+      expect(bounty.rejectionCount).to.equal(2);
+    });
+
+    it("Should return correct canOpenDispute status", async function () {
+      const { escrow, creator, hunter } = await loadFixture(deployFixture);
+
+      await escrow.connect(creator).createBounty(REWARD, 0);
+
+      // Can't dispute if not claimed
+      let [canDispute, reason] = await escrow.canOpenDispute(1);
+      expect(canDispute).to.be.false;
+      expect(reason).to.equal("Bounty not yet claimed");
+
+      await escrow.connect(hunter).claimBounty(1);
+
+      // Can't dispute without rejection
+      [canDispute, reason] = await escrow.canOpenDispute(1);
+      expect(canDispute).to.be.false;
+      expect(reason).to.equal("No rejections yet - submit work first");
+
+      // Submit and get rejected
+      await escrow.connect(hunter).submitWork(1, ethers.randomBytes(32));
+      await escrow.connect(creator).rejectWork(1, "Rejected");
+
+      // Now can dispute
+      [canDispute, reason] = await escrow.canOpenDispute(1);
+      expect(canDispute).to.be.true;
+      expect(reason).to.equal("Can dispute after rejection");
+    });
+  });
+
+  describe("Admin Functions - Dispute", function () {
+    it("Should update arbiter", async function () {
+      const { escrow, owner, hunter } = await loadFixture(deployFixture);
+
+      await escrow.connect(owner).setArbiter(hunter.address);
+      expect(await escrow.arbiter()).to.equal(hunter.address);
+    });
+
+    it("Should update dispute fee", async function () {
+      const { escrow, owner } = await loadFixture(deployFixture);
+      const newFee = ethers.parseUnits("2", 6);
+
+      await escrow.connect(owner).setDisputeFee(newFee);
+      expect(await escrow.disputeFee()).to.equal(newFee);
     });
   });
 });

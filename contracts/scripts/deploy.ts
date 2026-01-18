@@ -3,13 +3,16 @@ import { ethers, network } from "hardhat";
 // USDC addresses
 const USDC_ADDRESSES: Record<string, string> = {
   base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Official USDC on Base
-  baseSepolia: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", // Circle USDC on Base Sepolia
+  baseSepolia: "0xC821CdC016583D29e307E06bd96587cAC1757bB4", // MockUSDC on Base Sepolia (for testing)
   hardhat: "", // Will deploy MockUSDC
   localhost: "", // Will deploy MockUSDC
 };
 
 // Platform fee: 5% = 500 basis points
 const PLATFORM_FEE_BPS = 500;
+
+// Dispute fee: 1 USDC (6 decimals)
+const DISPUTE_FEE = ethers.parseUnits("1", 6);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -36,10 +39,20 @@ async function main() {
   const treasuryAddress = process.env.TREASURY_ADDRESS || deployer.address;
   console.log("\nTreasury address:", treasuryAddress);
 
+  // Get arbiter address from env or use deployer
+  const arbiterAddress = process.env.ARBITER_ADDRESS || deployer.address;
+  console.log("Arbiter address:", arbiterAddress);
+
   // Deploy SnapBountyEscrow
   console.log("\nDeploying SnapBountyEscrow...");
   const SnapBountyEscrow = await ethers.getContractFactory("SnapBountyEscrow");
-  const escrow = await SnapBountyEscrow.deploy(usdcAddress, treasuryAddress, PLATFORM_FEE_BPS);
+  const escrow = await SnapBountyEscrow.deploy(
+    usdcAddress,
+    treasuryAddress,
+    PLATFORM_FEE_BPS,
+    arbiterAddress,
+    DISPUTE_FEE
+  );
   await escrow.waitForDeployment();
 
   const escrowAddress = await escrow.getAddress();
@@ -50,7 +63,9 @@ async function main() {
   console.log("Network:", networkName);
   console.log("USDC Address:", usdcAddress);
   console.log("Treasury Address:", treasuryAddress);
+  console.log("Arbiter Address:", arbiterAddress);
   console.log("Platform Fee:", PLATFORM_FEE_BPS / 100, "%");
+  console.log("Dispute Fee:", ethers.formatUnits(DISPUTE_FEE, 6), "USDC");
   console.log("SnapBountyEscrow:", escrowAddress);
   console.log("=========================================\n");
 
@@ -66,6 +81,7 @@ async function main() {
     usdc: usdcAddress,
     escrow: escrowAddress,
     treasury: treasuryAddress,
+    arbiter: arbiterAddress,
   };
 }
 

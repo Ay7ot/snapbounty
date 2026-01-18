@@ -34,6 +34,7 @@ export const siteConfig = {
         { id: "submitted", label: "In Review", color: "status-pending" },
         { id: "completed", label: "Completed", color: "status-completed" },
         { id: "cancelled", label: "Cancelled", color: "status-closed" },
+        { id: "disputed", label: "In Dispute", color: "status-pending" },
     ] as const,
 
     // Social links
@@ -47,4 +48,9 @@ export const siteConfig = {
 export type Category = (typeof siteConfig.categories)[number]["id"];
 export type Difficulty = (typeof siteConfig.difficulties)[number]["id"];
 export type BountyStatus = (typeof siteConfig.statuses)[number]["id"];
+
+
+
+
+
 

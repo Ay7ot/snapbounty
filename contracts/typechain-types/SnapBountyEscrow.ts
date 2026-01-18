@@ -33,6 +33,7 @@ export declare namespace SnapBountyEscrow {
     deadline: BigNumberish;
     createdAt: BigNumberish;
     claimedAt: BigNumberish;
+    rejectionCount: BigNumberish;
   };
 
   export type BountyStructOutput = [
@@ -43,7 +44,8 @@ export declare namespace SnapBountyEscrow {
     proofHash: string,
     deadline: bigint,
     createdAt: bigint,
-    claimedAt: bigint
+    claimedAt: bigint,
+    rejectionCount: bigint
   ] & {
     creator: string;
     hunter: string;
@@ -53,6 +55,38 @@ export declare namespace SnapBountyEscrow {
     deadline: bigint;
     createdAt: bigint;
     claimedAt: bigint;
+    rejectionCount: bigint;
+  };
+
+  export type DisputeStruct = {
+    bountyId: BigNumberish;
+    initiator: AddressLike;
+    hunterEvidence: BytesLike;
+    creatorEvidence: BytesLike;
+    openedAt: BigNumberish;
+    disputeFee: BigNumberish;
+    resolution: BigNumberish;
+    resolved: boolean;
+  };
+
+  export type DisputeStructOutput = [
+    bountyId: bigint,
+    initiator: string,
+    hunterEvidence: string,
+    creatorEvidence: string,
+    openedAt: bigint,
+    disputeFee: bigint,
+    resolution: bigint,
+    resolved: boolean
+  ] & {
+    bountyId: bigint;
+    initiator: string;
+    hunterEvidence: string;
+    creatorEvidence: string;
+    openedAt: bigint;
+    disputeFee: bigint;
+    resolution: bigint;
+    resolved: boolean;
   };
 }
 
@@ -60,23 +94,41 @@ export interface SnapBountyEscrowInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "BPS_DENOMINATOR"
+      | "CREATOR_EVIDENCE_WINDOW"
+      | "DISPUTE_RESOLUTION_WINDOW"
+      | "MAX_CLAIM_DURATION"
       | "MAX_FEE_BPS"
+      | "MAX_REJECTIONS"
       | "activeClaim"
       | "approveWork"
+      | "arbiter"
+      | "autoResolveDispute"
       | "bounties"
       | "bountyCount"
+      | "canBeCancelled"
+      | "canOpenDispute"
       | "cancelBounty"
       | "claimBounty"
       | "createBounty"
+      | "disputeCount"
+      | "disputeFee"
+      | "disputes"
       | "getActiveClaim"
       | "getBounty"
+      | "getClaimExpirationTime"
+      | "getDispute"
       | "isExpired"
+      | "openDispute"
       | "owner"
       | "platformFeeBps"
       | "rejectWork"
       | "releaseClaim"
+      | "resolveDispute"
+      | "setArbiter"
+      | "setDisputeFee"
       | "setPlatformFee"
       | "setTreasury"
+      | "submitDisputeEvidence"
       | "submitWork"
       | "transferOwnership"
       | "treasury"
@@ -85,10 +137,15 @@ export interface SnapBountyEscrowInterface extends Interface {
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "ArbiterUpdated"
       | "BountyCancelled"
       | "BountyClaimed"
       | "BountyCreated"
       | "ClaimReleased"
+      | "DisputeEvidenceSubmitted"
+      | "DisputeFeeUpdated"
+      | "DisputeOpened"
+      | "DisputeResolved"
       | "FeeUpdated"
       | "OwnershipTransferred"
       | "TreasuryUpdated"
@@ -102,7 +159,23 @@ export interface SnapBountyEscrowInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "CREATOR_EVIDENCE_WINDOW",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "DISPUTE_RESOLUTION_WINDOW",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_CLAIM_DURATION",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "MAX_FEE_BPS",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_REJECTIONS",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -113,6 +186,11 @@ export interface SnapBountyEscrowInterface extends Interface {
     functionFragment: "approveWork",
     values: [BigNumberish]
   ): string;
+  encodeFunctionData(functionFragment: "arbiter", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "autoResolveDispute",
+    values: [BigNumberish]
+  ): string;
   encodeFunctionData(
     functionFragment: "bounties",
     values: [BigNumberish]
@@ -120,6 +198,14 @@ export interface SnapBountyEscrowInterface extends Interface {
   encodeFunctionData(
     functionFragment: "bountyCount",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "canBeCancelled",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "canOpenDispute",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "cancelBounty",
@@ -134,6 +220,18 @@ export interface SnapBountyEscrowInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "disputeCount",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "disputeFee",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "disputes",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "getActiveClaim",
     values: [AddressLike]
   ): string;
@@ -142,8 +240,20 @@ export interface SnapBountyEscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "getClaimExpirationTime",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getDispute",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "isExpired",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "openDispute",
+    values: [BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(
@@ -159,12 +269,28 @@ export interface SnapBountyEscrowInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "resolveDispute",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setArbiter",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setDisputeFee",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setPlatformFee",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setTreasury",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "submitDisputeEvidence",
+    values: [BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "submitWork",
@@ -182,7 +308,23 @@ export interface SnapBountyEscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "CREATOR_EVIDENCE_WINDOW",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "DISPUTE_RESOLUTION_WINDOW",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_CLAIM_DURATION",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "MAX_FEE_BPS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_REJECTIONS",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -193,9 +335,22 @@ export interface SnapBountyEscrowInterface extends Interface {
     functionFragment: "approveWork",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "arbiter", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "autoResolveDispute",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "bounties", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "bountyCount",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "canBeCancelled",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "canOpenDispute",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -211,11 +366,26 @@ export interface SnapBountyEscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "disputeCount",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "disputeFee", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "disputes", data: BytesLike): Result;
+  decodeFunctionResult(
     functionFragment: "getActiveClaim",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getBounty", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "getClaimExpirationTime",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "getDispute", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "isExpired", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "openDispute",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "platformFeeBps",
@@ -227,11 +397,24 @@ export interface SnapBountyEscrowInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "resolveDispute",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "setArbiter", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setDisputeFee",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setPlatformFee",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "setTreasury",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "submitDisputeEvidence",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "submitWork", data: BytesLike): Result;
@@ -241,6 +424,19 @@ export interface SnapBountyEscrowInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "treasury", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "usdc", data: BytesLike): Result;
+}
+
+export namespace ArbiterUpdatedEvent {
+  export type InputTuple = [oldArbiter: AddressLike, newArbiter: AddressLike];
+  export type OutputTuple = [oldArbiter: string, newArbiter: string];
+  export interface OutputObject {
+    oldArbiter: string;
+    newArbiter: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace BountyCancelledEvent {
@@ -318,6 +514,91 @@ export namespace ClaimReleasedEvent {
   export interface OutputObject {
     bountyId: bigint;
     hunter: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace DisputeEvidenceSubmittedEvent {
+  export type InputTuple = [
+    bountyId: BigNumberish,
+    submitter: AddressLike,
+    evidenceHash: BytesLike
+  ];
+  export type OutputTuple = [
+    bountyId: bigint,
+    submitter: string,
+    evidenceHash: string
+  ];
+  export interface OutputObject {
+    bountyId: bigint;
+    submitter: string;
+    evidenceHash: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace DisputeFeeUpdatedEvent {
+  export type InputTuple = [oldFee: BigNumberish, newFee: BigNumberish];
+  export type OutputTuple = [oldFee: bigint, newFee: bigint];
+  export interface OutputObject {
+    oldFee: bigint;
+    newFee: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace DisputeOpenedEvent {
+  export type InputTuple = [
+    bountyId: BigNumberish,
+    hunter: AddressLike,
+    evidenceHash: BytesLike,
+    disputeFee: BigNumberish
+  ];
+  export type OutputTuple = [
+    bountyId: bigint,
+    hunter: string,
+    evidenceHash: string,
+    disputeFee: bigint
+  ];
+  export interface OutputObject {
+    bountyId: bigint;
+    hunter: string;
+    evidenceHash: string;
+    disputeFee: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace DisputeResolvedEvent {
+  export type InputTuple = [
+    bountyId: BigNumberish,
+    resolution: BigNumberish,
+    hunterPayout: BigNumberish,
+    creatorRefund: BigNumberish
+  ];
+  export type OutputTuple = [
+    bountyId: bigint,
+    resolution: bigint,
+    hunterPayout: bigint,
+    creatorRefund: bigint
+  ];
+  export interface OutputObject {
+    bountyId: bigint;
+    resolution: bigint;
+    hunterPayout: bigint;
+    creatorRefund: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -474,7 +755,15 @@ export interface SnapBountyEscrow extends BaseContract {
 
   BPS_DENOMINATOR: TypedContractMethod<[], [bigint], "view">;
 
+  CREATOR_EVIDENCE_WINDOW: TypedContractMethod<[], [bigint], "view">;
+
+  DISPUTE_RESOLUTION_WINDOW: TypedContractMethod<[], [bigint], "view">;
+
+  MAX_CLAIM_DURATION: TypedContractMethod<[], [bigint], "view">;
+
   MAX_FEE_BPS: TypedContractMethod<[], [bigint], "view">;
+
+  MAX_REJECTIONS: TypedContractMethod<[], [bigint], "view">;
 
   activeClaim: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
@@ -484,10 +773,28 @@ export interface SnapBountyEscrow extends BaseContract {
     "nonpayable"
   >;
 
+  arbiter: TypedContractMethod<[], [string], "view">;
+
+  autoResolveDispute: TypedContractMethod<
+    [bountyId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   bounties: TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [string, string, bigint, bigint, string, bigint, bigint, bigint] & {
+      [
+        string,
+        string,
+        bigint,
+        bigint,
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint
+      ] & {
         creator: string;
         hunter: string;
         reward: bigint;
@@ -496,12 +803,25 @@ export interface SnapBountyEscrow extends BaseContract {
         deadline: bigint;
         createdAt: bigint;
         claimedAt: bigint;
+        rejectionCount: bigint;
       }
     ],
     "view"
   >;
 
   bountyCount: TypedContractMethod<[], [bigint], "view">;
+
+  canBeCancelled: TypedContractMethod<
+    [bountyId: BigNumberish],
+    [[boolean, string] & { canCancel: boolean; reason: string }],
+    "view"
+  >;
+
+  canOpenDispute: TypedContractMethod<
+    [bountyId: BigNumberish],
+    [[boolean, string] & { canDispute: boolean; reason: string }],
+    "view"
+  >;
 
   cancelBounty: TypedContractMethod<
     [bountyId: BigNumberish],
@@ -521,6 +841,27 @@ export interface SnapBountyEscrow extends BaseContract {
     "nonpayable"
   >;
 
+  disputeCount: TypedContractMethod<[], [bigint], "view">;
+
+  disputeFee: TypedContractMethod<[], [bigint], "view">;
+
+  disputes: TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [bigint, string, string, string, bigint, bigint, bigint, boolean] & {
+        bountyId: bigint;
+        initiator: string;
+        hunterEvidence: string;
+        creatorEvidence: string;
+        openedAt: bigint;
+        disputeFee: bigint;
+        resolution: bigint;
+        resolved: boolean;
+      }
+    ],
+    "view"
+  >;
+
   getActiveClaim: TypedContractMethod<[hunter: AddressLike], [bigint], "view">;
 
   getBounty: TypedContractMethod<
@@ -529,7 +870,25 @@ export interface SnapBountyEscrow extends BaseContract {
     "view"
   >;
 
+  getClaimExpirationTime: TypedContractMethod<
+    [bountyId: BigNumberish],
+    [bigint],
+    "view"
+  >;
+
+  getDispute: TypedContractMethod<
+    [bountyId: BigNumberish],
+    [SnapBountyEscrow.DisputeStructOutput],
+    "view"
+  >;
+
   isExpired: TypedContractMethod<[bountyId: BigNumberish], [boolean], "view">;
+
+  openDispute: TypedContractMethod<
+    [bountyId: BigNumberish, evidenceHash: BytesLike],
+    [void],
+    "nonpayable"
+  >;
 
   owner: TypedContractMethod<[], [string], "view">;
 
@@ -547,6 +906,24 @@ export interface SnapBountyEscrow extends BaseContract {
     "nonpayable"
   >;
 
+  resolveDispute: TypedContractMethod<
+    [bountyId: BigNumberish, resolution: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setArbiter: TypedContractMethod<
+    [newArbiter: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  setDisputeFee: TypedContractMethod<
+    [newDisputeFee: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   setPlatformFee: TypedContractMethod<
     [newFeeBps: BigNumberish],
     [void],
@@ -555,6 +932,12 @@ export interface SnapBountyEscrow extends BaseContract {
 
   setTreasury: TypedContractMethod<
     [newTreasury: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  submitDisputeEvidence: TypedContractMethod<
+    [bountyId: BigNumberish, evidenceHash: BytesLike],
     [void],
     "nonpayable"
   >;
@@ -583,7 +966,19 @@ export interface SnapBountyEscrow extends BaseContract {
     nameOrSignature: "BPS_DENOMINATOR"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "CREATOR_EVIDENCE_WINDOW"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "DISPUTE_RESOLUTION_WINDOW"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "MAX_CLAIM_DURATION"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "MAX_FEE_BPS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "MAX_REJECTIONS"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "activeClaim"
@@ -592,11 +987,27 @@ export interface SnapBountyEscrow extends BaseContract {
     nameOrSignature: "approveWork"
   ): TypedContractMethod<[bountyId: BigNumberish], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "arbiter"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "autoResolveDispute"
+  ): TypedContractMethod<[bountyId: BigNumberish], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "bounties"
   ): TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [string, string, bigint, bigint, string, bigint, bigint, bigint] & {
+      [
+        string,
+        string,
+        bigint,
+        bigint,
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint
+      ] & {
         creator: string;
         hunter: string;
         reward: bigint;
@@ -605,6 +1016,7 @@ export interface SnapBountyEscrow extends BaseContract {
         deadline: bigint;
         createdAt: bigint;
         claimedAt: bigint;
+        rejectionCount: bigint;
       }
     ],
     "view"
@@ -612,6 +1024,20 @@ export interface SnapBountyEscrow extends BaseContract {
   getFunction(
     nameOrSignature: "bountyCount"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "canBeCancelled"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish],
+    [[boolean, string] & { canCancel: boolean; reason: string }],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "canOpenDispute"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish],
+    [[boolean, string] & { canDispute: boolean; reason: string }],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "cancelBounty"
   ): TypedContractMethod<[bountyId: BigNumberish], [void], "nonpayable">;
@@ -626,6 +1052,30 @@ export interface SnapBountyEscrow extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "disputeCount"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "disputeFee"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "disputes"
+  ): TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [bigint, string, string, string, bigint, bigint, bigint, boolean] & {
+        bountyId: bigint;
+        initiator: string;
+        hunterEvidence: string;
+        creatorEvidence: string;
+        openedAt: bigint;
+        disputeFee: bigint;
+        resolution: bigint;
+        resolved: boolean;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "getActiveClaim"
   ): TypedContractMethod<[hunter: AddressLike], [bigint], "view">;
   getFunction(
@@ -636,8 +1086,25 @@ export interface SnapBountyEscrow extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getClaimExpirationTime"
+  ): TypedContractMethod<[bountyId: BigNumberish], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getDispute"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish],
+    [SnapBountyEscrow.DisputeStructOutput],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "isExpired"
   ): TypedContractMethod<[bountyId: BigNumberish], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "openDispute"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish, evidenceHash: BytesLike],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
@@ -655,11 +1122,31 @@ export interface SnapBountyEscrow extends BaseContract {
     nameOrSignature: "releaseClaim"
   ): TypedContractMethod<[bountyId: BigNumberish], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "resolveDispute"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish, resolution: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setArbiter"
+  ): TypedContractMethod<[newArbiter: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setDisputeFee"
+  ): TypedContractMethod<[newDisputeFee: BigNumberish], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "setPlatformFee"
   ): TypedContractMethod<[newFeeBps: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setTreasury"
   ): TypedContractMethod<[newTreasury: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "submitDisputeEvidence"
+  ): TypedContractMethod<
+    [bountyId: BigNumberish, evidenceHash: BytesLike],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "submitWork"
   ): TypedContractMethod<
@@ -677,6 +1164,13 @@ export interface SnapBountyEscrow extends BaseContract {
     nameOrSignature: "usdc"
   ): TypedContractMethod<[], [string], "view">;
 
+  getEvent(
+    key: "ArbiterUpdated"
+  ): TypedContractEvent<
+    ArbiterUpdatedEvent.InputTuple,
+    ArbiterUpdatedEvent.OutputTuple,
+    ArbiterUpdatedEvent.OutputObject
+  >;
   getEvent(
     key: "BountyCancelled"
   ): TypedContractEvent<
@@ -704,6 +1198,34 @@ export interface SnapBountyEscrow extends BaseContract {
     ClaimReleasedEvent.InputTuple,
     ClaimReleasedEvent.OutputTuple,
     ClaimReleasedEvent.OutputObject
+  >;
+  getEvent(
+    key: "DisputeEvidenceSubmitted"
+  ): TypedContractEvent<
+    DisputeEvidenceSubmittedEvent.InputTuple,
+    DisputeEvidenceSubmittedEvent.OutputTuple,
+    DisputeEvidenceSubmittedEvent.OutputObject
+  >;
+  getEvent(
+    key: "DisputeFeeUpdated"
+  ): TypedContractEvent<
+    DisputeFeeUpdatedEvent.InputTuple,
+    DisputeFeeUpdatedEvent.OutputTuple,
+    DisputeFeeUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "DisputeOpened"
+  ): TypedContractEvent<
+    DisputeOpenedEvent.InputTuple,
+    DisputeOpenedEvent.OutputTuple,
+    DisputeOpenedEvent.OutputObject
+  >;
+  getEvent(
+    key: "DisputeResolved"
+  ): TypedContractEvent<
+    DisputeResolvedEvent.InputTuple,
+    DisputeResolvedEvent.OutputTuple,
+    DisputeResolvedEvent.OutputObject
   >;
   getEvent(
     key: "FeeUpdated"
@@ -749,6 +1271,17 @@ export interface SnapBountyEscrow extends BaseContract {
   >;
 
   filters: {
+    "ArbiterUpdated(address,address)": TypedContractEvent<
+      ArbiterUpdatedEvent.InputTuple,
+      ArbiterUpdatedEvent.OutputTuple,
+      ArbiterUpdatedEvent.OutputObject
+    >;
+    ArbiterUpdated: TypedContractEvent<
+      ArbiterUpdatedEvent.InputTuple,
+      ArbiterUpdatedEvent.OutputTuple,
+      ArbiterUpdatedEvent.OutputObject
+    >;
+
     "BountyCancelled(uint256,address,uint256)": TypedContractEvent<
       BountyCancelledEvent.InputTuple,
       BountyCancelledEvent.OutputTuple,
@@ -791,6 +1324,50 @@ export interface SnapBountyEscrow extends BaseContract {
       ClaimReleasedEvent.InputTuple,
       ClaimReleasedEvent.OutputTuple,
       ClaimReleasedEvent.OutputObject
+    >;
+
+    "DisputeEvidenceSubmitted(uint256,address,bytes32)": TypedContractEvent<
+      DisputeEvidenceSubmittedEvent.InputTuple,
+      DisputeEvidenceSubmittedEvent.OutputTuple,
+      DisputeEvidenceSubmittedEvent.OutputObject
+    >;
+    DisputeEvidenceSubmitted: TypedContractEvent<
+      DisputeEvidenceSubmittedEvent.InputTuple,
+      DisputeEvidenceSubmittedEvent.OutputTuple,
+      DisputeEvidenceSubmittedEvent.OutputObject
+    >;
+
+    "DisputeFeeUpdated(uint256,uint256)": TypedContractEvent<
+      DisputeFeeUpdatedEvent.InputTuple,
+      DisputeFeeUpdatedEvent.OutputTuple,
+      DisputeFeeUpdatedEvent.OutputObject
+    >;
+    DisputeFeeUpdated: TypedContractEvent<
+      DisputeFeeUpdatedEvent.InputTuple,
+      DisputeFeeUpdatedEvent.OutputTuple,
+      DisputeFeeUpdatedEvent.OutputObject
+    >;
+
+    "DisputeOpened(uint256,address,bytes32,uint256)": TypedContractEvent<
+      DisputeOpenedEvent.InputTuple,
+      DisputeOpenedEvent.OutputTuple,
+      DisputeOpenedEvent.OutputObject
+    >;
+    DisputeOpened: TypedContractEvent<
+      DisputeOpenedEvent.InputTuple,
+      DisputeOpenedEvent.OutputTuple,
+      DisputeOpenedEvent.OutputObject
+    >;
+
+    "DisputeResolved(uint256,uint8,uint256,uint256)": TypedContractEvent<
+      DisputeResolvedEvent.InputTuple,
+      DisputeResolvedEvent.OutputTuple,
+      DisputeResolvedEvent.OutputObject
+    >;
+    DisputeResolved: TypedContractEvent<
+      DisputeResolvedEvent.InputTuple,
+      DisputeResolvedEvent.OutputTuple,
+      DisputeResolvedEvent.OutputObject
     >;
 
     "FeeUpdated(uint256,uint256)": TypedContractEvent<

@@ -499,22 +499,16 @@ export default function TestnetGuidePage() {
                                         <p className="text-xs text-text-tertiary mb-1">Escrow Contract</p>
                                         <div className="flex items-center justify-between gap-2">
                                             <code className="text-sm text-text-primary font-mono break-all">
-                                                0x683E131dD6ee598E537ce155BFc0aAF0e19d0107
+                                                0xDc23e13811965c54C94275431398734Eb268e0e1
                                             </code>
-                                            <button
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText("0x683E131dD6ee598E537ce155BFc0aAF0e19d0107");
-                                                    setCopied(true);
-                                                    setTimeout(() => setCopied(false), 2000);
-                                                }}
+                                            <a
+                                                href="https://sepolia.basescan.org/address/0xDc23e13811965c54C94275431398734Eb268e0e1"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
                                                 className="p-1 hover:bg-bg-tertiary rounded transition-colors shrink-0"
                                             >
-                                                {copied ? (
-                                                    <Check className="w-4 h-4 text-accent-green" />
-                                                ) : (
-                                                    <Copy className="w-4 h-4 text-text-tertiary" />
-                                                )}
-                                            </button>
+                                                <ExternalLink className="w-4 h-4 text-text-tertiary hover:text-accent-green transition-colors" />
+                                            </a>
                                         </div>
                                     </div>
                                     <div className="p-4 bg-bg-primary/50 rounded-lg border border-border-default">
@@ -524,7 +518,7 @@ export default function TestnetGuidePage() {
                                                 0xC821CdC016583D29e307E06bd96587cAC1757bB4
                                             </code>
                                             <a
-                                                href={`https://sepolia.basescan.org/address/0xC821CdC016583D29e307E06bd96587cAC1757bB4`}
+                                                href="https://sepolia.basescan.org/address/0xC821CdC016583D29e307E06bd96587cAC1757bB4"
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="p-1 hover:bg-bg-tertiary rounded transition-colors shrink-0"

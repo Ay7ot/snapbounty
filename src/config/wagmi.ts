@@ -5,8 +5,16 @@ import { http } from "wagmi";
 import { base, baseSepolia } from "wagmi/chains";
 
 // Use reliable RPC endpoints
-const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
-const BASE_MAINNET_RPC = "https://mainnet.base.org";
+// Priority: Environment variable > Alchemy (if key provided) > PublicNode
+const ALCHEMY_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+
+const BASE_SEPOLIA_RPC =
+  process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC ||
+  (ALCHEMY_KEY ? `https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}` : "https://base-sepolia-rpc.publicnode.com");
+
+const BASE_MAINNET_RPC =
+  process.env.NEXT_PUBLIC_BASE_MAINNET_RPC ||
+  (ALCHEMY_KEY ? `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}` : "https://base-rpc.publicnode.com");
 
 // Check if we're in testnet mode (default to true for now since contracts are on Base Sepolia)
 // Set NEXT_PUBLIC_USE_MAINNET=true when ready for mainnet
@@ -47,3 +55,8 @@ export const BASE_SEPOLIA_NETWORK = {
 
 // Chainlist URL for Base Sepolia
 export const CHAINLIST_BASE_SEPOLIA_URL = "https://chainlist.org/chain/84532";
+
+
+
+
+

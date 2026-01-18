@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useState, useRef, useEffect } from "react";
+import { useCallback, useMemo } from "react";
 import {
   useAccount,
   useChainId,
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
-  useWatchContractEvent,
 } from "wagmi";
-import { parseUnits, formatUnits, keccak256, toBytes } from "viem";
+import { parseUnits, formatUnits, keccak256, toBytes, decodeEventLog } from "viem";
 import {
   ESCROW_ADDRESSES,
   USDC_ADDRESSES,
@@ -17,6 +16,7 @@ import {
   ERC20_ABI,
   BountyStatus,
   type ContractBounty,
+  type ContractDispute,
 } from "@/config/contracts";
 
 // ============ Contract Address Hooks ============
@@ -226,93 +226,51 @@ export function useApproveUsdc() {
 
 /**
  * Create a bounty on the contract
+ * 
+ * This hook handles a common issue where the RPC returns an error
+ * even though the transaction was actually submitted and mined.
+ * It polls the bounty count to detect success when hash is unavailable.
  */
 export function useCreateBounty() {
   const escrowAddress = useEscrowAddress();
-  const { address } = useAccount();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess, data: receipt } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state for robust success detection
-  const [eventBountyId, setEventBountyId] = useState<number | null>(null);
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Parse bounty ID from receipt logs by decoding BountyCreated event
+  const createdBountyId = useMemo(() => {
+    if (!receipt?.logs) return null;
 
-  // Watch for BountyCreated events to detect success even if transaction hash is missing
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "BountyCreated",
-    args: { creator: address },
-    onLogs(logs) {
-      const log = logs[0];
-      // Only accept events that happened after we started the process
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        console.log("Found BountyCreated event via listener:", log);
-        // @ts-ignore - Args are typed but sometimes complex in wagmi
-        const id = Number(log.args.bountyId);
-        setEventBountyId(id);
-        setIsEventSuccess(true);
-        setIsWaitingForEvent(false);
-        setShouldShowError(false);
-        // Clear any pending error timeout
-        if (errorTimeoutRef.current) {
-          clearTimeout(errorTimeoutRef.current);
-          errorTimeoutRef.current = null;
+    // Filter logs from the escrow contract
+    const escrowLogs = receipt.logs.filter(
+      (log) => log.address.toLowerCase() === escrowAddress.toLowerCase()
+    );
+
+    for (const log of escrowLogs) {
+      try {
+        const decoded = decodeEventLog({
+          abi: SNAP_BOUNTY_ESCROW_ABI,
+          data: log.data,
+          topics: log.topics,
+        });
+
+        if (decoded.eventName === "BountyCreated") {
+          const bountyId = Number((decoded.args as { bountyId: bigint }).bountyId);
+          return bountyId;
         }
+      } catch {
+        // Not the BountyCreated event, continue
       }
-    },
-    enabled: !!address && startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay to allow event listener to catch success
-  useEffect(() => {
-    // If we have an error but no hash, wait for event listener before showing error
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-
-      // Wait 15 seconds for event listener to potentially detect success
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          console.log("Event timeout reached, showing error");
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
     }
-
-    return () => {
-      if (errorTimeoutRef.current) {
-        clearTimeout(errorTimeoutRef.current);
-      }
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
+    return null;
+  }, [receipt, escrowAddress]);
 
   const createBounty = useCallback(
     async (rewardUsdc: number, deadlineTimestamp: number = 0) => {
-      startTimeRef.current = Date.now();
-      setEventBountyId(null);
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       const rewardWei = parseUnits(rewardUsdc.toString(), 6);
-
-      // Debug logging
-      console.log("=== CREATE BOUNTY DEBUG ===");
-      console.log("Reward (USDC):", rewardUsdc);
-      console.log("Reward (Wei):", rewardWei.toString());
-      console.log("Deadline:", deadlineTimestamp);
-      console.log("Escrow Address:", escrowAddress);
-      console.log("===========================");
 
       writeContract({
         address: escrowAddress,
@@ -324,34 +282,15 @@ export function useCreateBounty() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setEventBountyId(null);
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  // Determine what error to expose
-  // - Hide error if event success detected
-  // - Hide error if we're still waiting for event listener
-  // - Only show error after timeout if no event detected
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     createBounty,
     hash,
-    isPending: isPending || isWaitingForEvent, // Show as pending while waiting for event
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
+    isSuccess,
     receipt,
-    createdBountyId: eventBountyId,
-    error: exposedError,
+    createdBountyId,
+    error,
     reset,
   };
 }
@@ -361,67 +300,15 @@ export function useCreateBounty() {
  */
 export function useClaimBounty() {
   const escrowAddress = useEscrowAddress();
-  const { address } = useAccount();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Watch for BountyClaimed events
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "BountyClaimed",
-    args: { hunter: address },
-    onLogs(logs) {
-      const log = logs[0];
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        console.log("Found BountyClaimed event via listener:", log);
-        setIsEventSuccess(true);
-        setIsWaitingForEvent(false);
-        setShouldShowError(false);
-        if (errorTimeoutRef.current) {
-          clearTimeout(errorTimeoutRef.current);
-          errorTimeoutRef.current = null;
-        }
-      }
-    },
-    enabled: !!address && startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
-
   const claimBounty = useCallback(
     async (bountyId: number) => {
-      startTimeRef.current = Date.now();
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       writeContract({
         address: escrowAddress,
         abi: SNAP_BOUNTY_ESCROW_ABI,
@@ -432,27 +319,13 @@ export function useClaimBounty() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     claimBounty,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -462,68 +335,15 @@ export function useClaimBounty() {
  */
 export function useSubmitWork() {
   const escrowAddress = useEscrowAddress();
-  const { address } = useAccount();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Watch for WorkSubmitted events
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "WorkSubmitted",
-    args: { hunter: address },
-    onLogs(logs) {
-      const log = logs[0];
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        console.log("Found WorkSubmitted event via listener:", log);
-        setIsEventSuccess(true);
-        setIsWaitingForEvent(false);
-        setShouldShowError(false);
-        if (errorTimeoutRef.current) {
-          clearTimeout(errorTimeoutRef.current);
-          errorTimeoutRef.current = null;
-        }
-      }
-    },
-    enabled: !!address && startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
-
   const submitWork = useCallback(
     async (bountyId: number, proofUrl: string) => {
-      startTimeRef.current = Date.now();
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
-      // Hash the proof URL to create a bytes32 value
       const proofHash = keccak256(toBytes(proofUrl));
       writeContract({
         address: escrowAddress,
@@ -535,27 +355,13 @@ export function useSubmitWork() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     submitWork,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -566,70 +372,14 @@ export function useSubmitWork() {
 export function useApproveWork() {
   const escrowAddress = useEscrowAddress();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const [targetBountyId, setTargetBountyId] = useState<number | null>(null);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Watch for WorkApproved events
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "WorkApproved",
-    onLogs(logs) {
-      const log = logs[0];
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        // @ts-ignore
-        const eventBountyId = Number(log.args.bountyId);
-        if (targetBountyId === null || eventBountyId === targetBountyId) {
-          console.log("Found WorkApproved event via listener:", log);
-          setIsEventSuccess(true);
-          setIsWaitingForEvent(false);
-          setShouldShowError(false);
-          if (errorTimeoutRef.current) {
-            clearTimeout(errorTimeoutRef.current);
-            errorTimeoutRef.current = null;
-          }
-        }
-      }
-    },
-    enabled: startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
-
   const approveWork = useCallback(
     async (bountyId: number) => {
-      startTimeRef.current = Date.now();
-      setTargetBountyId(bountyId);
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       writeContract({
         address: escrowAddress,
         abi: SNAP_BOUNTY_ESCROW_ABI,
@@ -640,28 +390,13 @@ export function useApproveWork() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    setTargetBountyId(null);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     approveWork,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -672,70 +407,14 @@ export function useApproveWork() {
 export function useRejectWork() {
   const escrowAddress = useEscrowAddress();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const [targetBountyId, setTargetBountyId] = useState<number | null>(null);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Watch for WorkRejected events
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "WorkRejected",
-    onLogs(logs) {
-      const log = logs[0];
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        // @ts-ignore
-        const eventBountyId = Number(log.args.bountyId);
-        if (targetBountyId === null || eventBountyId === targetBountyId) {
-          console.log("Found WorkRejected event via listener:", log);
-          setIsEventSuccess(true);
-          setIsWaitingForEvent(false);
-          setShouldShowError(false);
-          if (errorTimeoutRef.current) {
-            clearTimeout(errorTimeoutRef.current);
-            errorTimeoutRef.current = null;
-          }
-        }
-      }
-    },
-    enabled: startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
-
   const rejectWork = useCallback(
     async (bountyId: number, reason: string) => {
-      startTimeRef.current = Date.now();
-      setTargetBountyId(bountyId);
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       writeContract({
         address: escrowAddress,
         abi: SNAP_BOUNTY_ESCROW_ABI,
@@ -746,28 +425,13 @@ export function useRejectWork() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    setTargetBountyId(null);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     rejectWork,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -777,67 +441,15 @@ export function useRejectWork() {
  */
 export function useCancelBounty() {
   const escrowAddress = useEscrowAddress();
-  const { address } = useAccount();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Event tracking state
-  const [isEventSuccess, setIsEventSuccess] = useState(false);
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Watch for BountyCancelled events
-  useWatchContractEvent({
-    address: escrowAddress,
-    abi: SNAP_BOUNTY_ESCROW_ABI,
-    eventName: "BountyCancelled",
-    args: { creator: address },
-    onLogs(logs) {
-      const log = logs[0];
-      if (log && startTimeRef.current > 0 && Date.now() > startTimeRef.current) {
-        console.log("Found BountyCancelled event via listener:", log);
-        setIsEventSuccess(true);
-        setIsWaitingForEvent(false);
-        setShouldShowError(false);
-        if (errorTimeoutRef.current) {
-          clearTimeout(errorTimeoutRef.current);
-          errorTimeoutRef.current = null;
-        }
-      }
-    },
-    enabled: !!address && startTimeRef.current > 0,
-  });
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isEventSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!isEventSuccess) {
-          setIsWaitingForEvent(false);
-          setShouldShowError(true);
-        }
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isEventSuccess, isPending]);
-
   const cancelBounty = useCallback(
     async (bountyId: number) => {
-      startTimeRef.current = Date.now();
-      setIsEventSuccess(false);
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       writeContract({
         address: escrowAddress,
         abi: SNAP_BOUNTY_ESCROW_ABI,
@@ -848,27 +460,13 @@ export function useCancelBounty() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsEventSuccess(false);
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = isEventSuccess ? null : (shouldShowError ? writeError : null);
-
   return {
     cancelBounty,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess || isEventSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -879,39 +477,14 @@ export function useCancelBounty() {
 export function useReleaseClaim() {
   const escrowAddress = useEscrowAddress();
 
-  const { writeContract, data: hash, isPending, error: writeError, reset: resetWrite } = useWriteContract();
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isReceiptSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  // Error delay state (no specific event for release claim)
-  const [isWaitingForEvent, setIsWaitingForEvent] = useState(false);
-  const [shouldShowError, setShouldShowError] = useState(false);
-  const startTimeRef = useRef<number>(0);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Handle error display with delay
-  useEffect(() => {
-    if (writeError && !hash && !isReceiptSuccess && !isPending) {
-      setIsWaitingForEvent(true);
-      setShouldShowError(false);
-      errorTimeoutRef.current = setTimeout(() => {
-        setIsWaitingForEvent(false);
-        setShouldShowError(true);
-      }, 15000);
-    }
-    return () => {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    };
-  }, [writeError, hash, isReceiptSuccess, isPending]);
-
   const releaseClaim = useCallback(
     async (bountyId: number) => {
-      startTimeRef.current = Date.now();
-      setIsWaitingForEvent(false);
-      setShouldShowError(false);
-
       writeContract({
         address: escrowAddress,
         abi: SNAP_BOUNTY_ESCROW_ABI,
@@ -922,26 +495,13 @@ export function useReleaseClaim() {
     [writeContract, escrowAddress]
   );
 
-  const reset = useCallback(() => {
-    resetWrite();
-    setIsWaitingForEvent(false);
-    setShouldShowError(false);
-    startTimeRef.current = 0;
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = null;
-    }
-  }, [resetWrite]);
-
-  const exposedError = shouldShowError ? writeError : null;
-
   return {
     releaseClaim,
     hash,
-    isPending: isPending || isWaitingForEvent,
+    isPending,
     isConfirming,
-    isSuccess: isReceiptSuccess,
-    error: exposedError,
+    isSuccess,
+    error,
     reset,
   };
 }
@@ -993,6 +553,252 @@ export function useIsHunter(bountyId: number | undefined) {
     if (!bounty || !address) return false;
     return bounty.hunter.toLowerCase() === address.toLowerCase();
   }, [bounty, address]);
+}
+
+// ============ Dispute Hooks ============
+
+/**
+ * Get dispute data from contract
+ */
+export function useGetDispute(bountyId: number | undefined) {
+  const escrowAddress = useEscrowAddress();
+
+  const { data, isLoading, error, refetch } = useReadContract({
+    address: escrowAddress,
+    abi: SNAP_BOUNTY_ESCROW_ABI,
+    functionName: "getDispute",
+    args: bountyId ? [BigInt(bountyId)] : undefined,
+    query: {
+      enabled: !!bountyId && bountyId > 0,
+    },
+  });
+
+  return {
+    dispute: data as ContractDispute | undefined,
+    isLoading,
+    error,
+    refetch,
+  };
+}
+
+/**
+ * Check if a dispute can be opened for a bounty
+ */
+export function useCanOpenDispute(bountyId: number | undefined) {
+  const escrowAddress = useEscrowAddress();
+
+  const { data, isLoading, error, refetch } = useReadContract({
+    address: escrowAddress,
+    abi: SNAP_BOUNTY_ESCROW_ABI,
+    functionName: "canOpenDispute",
+    args: bountyId ? [BigInt(bountyId)] : undefined,
+    query: {
+      enabled: !!bountyId && bountyId > 0,
+    },
+  });
+
+  return {
+    canDispute: (data as [boolean, string] | undefined)?.[0] ?? false,
+    reason: (data as [boolean, string] | undefined)?.[1] ?? "",
+    isLoading,
+    error,
+    refetch,
+  };
+}
+
+/**
+ * Get dispute fee
+ */
+export function useDisputeFee() {
+  const escrowAddress = useEscrowAddress();
+
+  const { data, isLoading, error } = useReadContract({
+    address: escrowAddress,
+    abi: SNAP_BOUNTY_ESCROW_ABI,
+    functionName: "disputeFee",
+  });
+
+  return {
+    disputeFee: data ?? BigInt(0),
+    formattedDisputeFee: data ? formatUnits(data, 6) : "0",
+    disputeFeeAmount: data ? parseFloat(formatUnits(data, 6)) : 0,
+    isLoading,
+    error,
+  };
+}
+
+/**
+ * Get arbiter address
+ */
+export function useArbiter() {
+  const escrowAddress = useEscrowAddress();
+
+  const { data, isLoading, error } = useReadContract({
+    address: escrowAddress,
+    abi: SNAP_BOUNTY_ESCROW_ABI,
+    functionName: "arbiter",
+  });
+
+  return {
+    arbiter: data as `0x${string}` | undefined,
+    isLoading,
+    error,
+  };
+}
+
+/**
+ * Check if user is the arbiter
+ */
+export function useIsArbiter() {
+  const { address } = useAccount();
+  const { arbiter } = useArbiter();
+
+  return useMemo(() => {
+    if (!arbiter || !address) return false;
+    return arbiter.toLowerCase() === address.toLowerCase();
+  }, [arbiter, address]);
+}
+
+/**
+ * Open a dispute
+ */
+export function useOpenDispute() {
+  const escrowAddress = useEscrowAddress();
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const openDispute = useCallback(
+    async (bountyId: number, evidenceUrl: string) => {
+      const evidenceHash = keccak256(toBytes(evidenceUrl));
+      writeContract({
+        address: escrowAddress,
+        abi: SNAP_BOUNTY_ESCROW_ABI,
+        functionName: "openDispute",
+        args: [BigInt(bountyId), evidenceHash],
+      });
+    },
+    [writeContract, escrowAddress]
+  );
+
+  return {
+    openDispute,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    reset,
+  };
+}
+
+/**
+ * Submit dispute evidence (creator)
+ */
+export function useSubmitDisputeEvidence() {
+  const escrowAddress = useEscrowAddress();
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const submitEvidence = useCallback(
+    async (bountyId: number, evidenceUrl: string) => {
+      const evidenceHash = keccak256(toBytes(evidenceUrl));
+      writeContract({
+        address: escrowAddress,
+        abi: SNAP_BOUNTY_ESCROW_ABI,
+        functionName: "submitDisputeEvidence",
+        args: [BigInt(bountyId), evidenceHash],
+      });
+    },
+    [writeContract, escrowAddress]
+  );
+
+  return {
+    submitEvidence,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    reset,
+  };
+}
+
+/**
+ * Resolve a dispute (arbiter only)
+ */
+export function useResolveDispute() {
+  const escrowAddress = useEscrowAddress();
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const resolveDispute = useCallback(
+    async (bountyId: number, resolution: number) => {
+      writeContract({
+        address: escrowAddress,
+        abi: SNAP_BOUNTY_ESCROW_ABI,
+        functionName: "resolveDispute",
+        args: [BigInt(bountyId), resolution],
+      });
+    },
+    [writeContract, escrowAddress]
+  );
+
+  return {
+    resolveDispute,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    reset,
+  };
+}
+
+/**
+ * Auto-resolve a dispute after timeout
+ */
+export function useAutoResolveDispute() {
+  const escrowAddress = useEscrowAddress();
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const autoResolve = useCallback(
+    async (bountyId: number) => {
+      writeContract({
+        address: escrowAddress,
+        abi: SNAP_BOUNTY_ESCROW_ABI,
+        functionName: "autoResolveDispute",
+        args: [BigInt(bountyId)],
+      });
+    },
+    [writeContract, escrowAddress]
+  );
+
+  return {
+    autoResolve,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    reset,
+  };
 }
 
 

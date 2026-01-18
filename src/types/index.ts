@@ -123,3 +123,8 @@ export interface BountyFilters {
   sortBy?: "newest" | "oldest" | "reward_high" | "reward_low";
 }
 
+
+
+
+
+

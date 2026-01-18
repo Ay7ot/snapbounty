@@ -2,7 +2,7 @@ import { base, baseSepolia } from "wagmi/chains";
 
 // Contract addresses by chain
 export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
-  [baseSepolia.id]: "0x683E131dD6ee598E537ce155BFc0aAF0e19d0107", // Deployed on Base Sepolia
+  [baseSepolia.id]: "0xDc23e13811965c54C94275431398734Eb268e0e1", // Deployed on Base Sepolia (v4 with MockUSDC)
   [base.id]: "0x0000000000000000000000000000000000000000", // TODO: Deploy to mainnet
 };
 
@@ -15,6 +15,18 @@ export const USDC_ADDRESSES: Record<number, `0x${string}`> = {
 // Platform fee in basis points (500 = 5%)
 export const PLATFORM_FEE_BPS = 500;
 
+// Maximum time a hunter can hold a claim (30 days in seconds)
+export const MAX_CLAIM_DURATION = 30 * 24 * 60 * 60; // 2,592,000 seconds
+
+// Dispute fee (1 USDC)
+export const DISPUTE_FEE = 1_000_000; // 1 USDC in 6 decimals
+
+// Maximum rejections before auto-escalation
+export const MAX_REJECTIONS = 3;
+
+// Dispute resolution window (14 days in seconds)
+export const DISPUTE_RESOLUTION_WINDOW = 14 * 24 * 60 * 60;
+
 // Bounty status enum matching contract
 export enum BountyStatus {
   Open = 0,
@@ -22,6 +34,15 @@ export enum BountyStatus {
   Submitted = 2,
   Completed = 3,
   Cancelled = 4,
+  Disputed = 5,
+}
+
+// Dispute resolution enum
+export enum DisputeResolution {
+  Pending = 0,
+  HunterWins = 1,
+  CreatorWins = 2,
+  Split = 3,
 }
 
 // Human-readable status labels
@@ -31,6 +52,15 @@ export const BOUNTY_STATUS_LABELS: Record<BountyStatus, string> = {
   [BountyStatus.Submitted]: "In Review",
   [BountyStatus.Completed]: "Completed",
   [BountyStatus.Cancelled]: "Cancelled",
+  [BountyStatus.Disputed]: "In Dispute",
+};
+
+// Human-readable dispute resolution labels
+export const DISPUTE_RESOLUTION_LABELS: Record<DisputeResolution, string> = {
+  [DisputeResolution.Pending]: "Pending",
+  [DisputeResolution.HunterWins]: "Hunter Won",
+  [DisputeResolution.CreatorWins]: "Creator Won",
+  [DisputeResolution.Split]: "Split 50/50",
 };
 
 // SnapBountyEscrow ABI (minimal for frontend use)
@@ -50,6 +80,7 @@ export const SNAP_BOUNTY_ESCROW_ABI = [
           { name: "deadline", type: "uint256" },
           { name: "createdAt", type: "uint256" },
           { name: "claimedAt", type: "uint256" },
+          { name: "rejectionCount", type: "uint8" },
         ],
         name: "",
         type: "tuple",
@@ -69,6 +100,23 @@ export const SNAP_BOUNTY_ESCROW_ABI = [
     inputs: [{ name: "bountyId", type: "uint256" }],
     name: "isExpired",
     outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "bountyId", type: "uint256" }],
+    name: "canBeCancelled",
+    outputs: [
+      { name: "canCancel", type: "bool" },
+      { name: "reason", type: "string" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "bountyId", type: "uint256" }],
+    name: "getClaimExpirationTime",
+    outputs: [{ name: "expiresAt", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
@@ -152,6 +200,91 @@ export const SNAP_BOUNTY_ESCROW_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  // Dispute functions
+  {
+    inputs: [
+      { name: "bountyId", type: "uint256" },
+      { name: "evidenceHash", type: "bytes32" },
+    ],
+    name: "openDispute",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "bountyId", type: "uint256" },
+      { name: "evidenceHash", type: "bytes32" },
+    ],
+    name: "submitDisputeEvidence",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "bountyId", type: "uint256" },
+      { name: "resolution", type: "uint8" },
+    ],
+    name: "resolveDispute",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "bountyId", type: "uint256" }],
+    name: "autoResolveDispute",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Dispute view functions
+  {
+    inputs: [{ name: "bountyId", type: "uint256" }],
+    name: "getDispute",
+    outputs: [
+      {
+        components: [
+          { name: "bountyId", type: "uint256" },
+          { name: "initiator", type: "address" },
+          { name: "hunterEvidence", type: "bytes32" },
+          { name: "creatorEvidence", type: "bytes32" },
+          { name: "openedAt", type: "uint256" },
+          { name: "disputeFee", type: "uint256" },
+          { name: "resolution", type: "uint8" },
+          { name: "resolved", type: "bool" },
+        ],
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "bountyId", type: "uint256" }],
+    name: "canOpenDispute",
+    outputs: [
+      { name: "canDispute", type: "bool" },
+      { name: "reason", type: "string" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "disputeFee",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "arbiter",
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
   // Events
   {
     anonymous: false,
@@ -215,6 +348,39 @@ export const SNAP_BOUNTY_ESCROW_ABI = [
     name: "BountyCancelled",
     type: "event",
   },
+  // Dispute events
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "bountyId", type: "uint256" },
+      { indexed: true, name: "hunter", type: "address" },
+      { indexed: false, name: "evidenceHash", type: "bytes32" },
+      { indexed: false, name: "disputeFee", type: "uint256" },
+    ],
+    name: "DisputeOpened",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "bountyId", type: "uint256" },
+      { indexed: true, name: "submitter", type: "address" },
+      { indexed: false, name: "evidenceHash", type: "bytes32" },
+    ],
+    name: "DisputeEvidenceSubmitted",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "bountyId", type: "uint256" },
+      { indexed: false, name: "resolution", type: "uint8" },
+      { indexed: false, name: "hunterPayout", type: "uint256" },
+      { indexed: false, name: "creatorRefund", type: "uint256" },
+    ],
+    name: "DisputeResolved",
+    type: "event",
+  },
 ] as const;
 
 // ERC20 ABI (minimal for USDC interactions)
@@ -265,6 +431,19 @@ export interface ContractBounty {
   deadline: bigint;
   createdAt: bigint;
   claimedAt: bigint;
+  rejectionCount: number;
+}
+
+// Contract type for dispute data
+export interface ContractDispute {
+  bountyId: bigint;
+  initiator: `0x${string}`;
+  hunterEvidence: `0x${string}`;
+  creatorEvidence: `0x${string}`;
+  openedAt: bigint;
+  disputeFee: bigint;
+  resolution: number;
+  resolved: boolean;
 }
 
 

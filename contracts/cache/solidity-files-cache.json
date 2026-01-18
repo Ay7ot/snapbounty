@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/ayomideibiteye/Documents/snapbounty/contracts/src/SnapBountyEscrow.sol": {
-      "lastModificationDate": 1766942423782,
-      "contentHash": "dba6d9caac5407e9d13a49b742a4a8f7",
+      "lastModificationDate": 1768683435530,
+      "contentHash": "15c6994acef8024b8204356aca6dae33",
       "sourceName": "src/SnapBountyEscrow.sol",
       "solcConfig": {
         "version": "0.8.24",

@@ -25,8 +25,23 @@ export {
   useCanClaim,
   useIsCreator,
   useIsHunter,
+  // Dispute hooks
+  useGetDispute,
+  useCanOpenDispute,
+  useDisputeFee,
+  useArbiter,
+  useIsArbiter,
+  useOpenDispute,
+  useSubmitDisputeEvidence,
+  useResolveDispute,
+  useAutoResolveDispute,
 } from "./useContract";
 
 // Mint hook
 export { useMintUsdc } from "./useMintUsdc";
+
+
+
+
+
 

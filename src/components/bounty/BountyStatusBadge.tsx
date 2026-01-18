@@ -16,6 +16,7 @@ const statusToVariant: Record<number, "open" | "active" | "pending" | "completed
   [BountyStatus.Submitted]: "pending",
   [BountyStatus.Completed]: "completed",
   [BountyStatus.Cancelled]: "closed",
+  [BountyStatus.Disputed]: "pending", // Show disputed as pending (amber color)
 };
 
 // Map string status from Supabase to badge variants
@@ -25,6 +26,7 @@ const stringStatusToVariant: Record<string, "open" | "active" | "pending" | "com
   submitted: "pending",
   completed: "completed",
   cancelled: "closed",
+  disputed: "pending",
 };
 
 export function BountyStatusBadge({ status, className }: BountyStatusBadgeProps) {

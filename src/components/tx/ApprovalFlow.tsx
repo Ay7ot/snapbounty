@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { parseUnits, formatUnits } from "viem";
-import { Check, ChevronRight, Loader2 } from "lucide-react";
+import { parseUnits } from "viem";
+import { Check, AlertCircle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { TransactionButton } from "./TransactionButton";
 import { useUsdcAllowance, useUsdcBalance, useApproveUsdc } from "@/hooks/useContract";
@@ -20,6 +20,9 @@ interface ApprovalFlowProps {
   actionError?: Error | null;
   actionHash?: `0x${string}`;
   actionReset?: () => void;
+  actionOnSuccess?: () => void | Promise<void>;
+  actionConfirmingText?: string;
+  actionSuccessMessage?: string;
   disabled?: boolean;
 }
 
@@ -36,6 +39,9 @@ export function ApprovalFlow({
   actionError = null,
   actionHash,
   actionReset,
+  actionOnSuccess,
+  actionConfirmingText = "Processing...",
+  actionSuccessMessage = "Transaction successful!",
   disabled = false,
 }: ApprovalFlowProps) {
   const { address } = useAccount();
@@ -55,19 +61,25 @@ export function ApprovalFlow({
   const hasEnoughBalance = balance >= requiredAmountWei;
   const hasEnoughAllowance = allowance >= requiredAmountWei;
 
-  const [currentStep, setCurrentStep] = useState<Step>(hasEnoughAllowance ? "action" : "approve");
+  const [currentStep, setCurrentStep] = useState<Step>("approve");
+
+  // Force refetch allowance on mount to avoid stale cache
+  useEffect(() => {
+    refetchAllowance();
+  }, [refetchAllowance]);
 
   // Update step when allowance changes
   useEffect(() => {
     if (hasEnoughAllowance) {
       setCurrentStep("action");
+    } else {
+      setCurrentStep("approve");
     }
   }, [hasEnoughAllowance]);
 
   // Handle approval success
   useEffect(() => {
     if (approveIsSuccess) {
-      // Refetch allowance after approval
       const timer = setTimeout(() => {
         refetchAllowance();
         onApprovalComplete?.();
@@ -76,15 +88,20 @@ export function ApprovalFlow({
     }
   }, [approveIsSuccess, refetchAllowance, onApprovalComplete]);
 
-  // If user doesn't have enough balance, show error state
+  // Insufficient balance state
   if (!hasEnoughBalance) {
     return (
       <div className="space-y-4">
-        <div className="p-4 rounded-lg bg-accent-red/10 border border-accent-red/30">
-          <p className="text-sm text-accent-red font-medium">Insufficient USDC Balance</p>
-          <p className="text-xs text-text-secondary mt-1">
-            You need ${requiredAmount.toFixed(2)} USDC but only have ${formattedBalance} USDC.
-          </p>
+        <div className="p-4 rounded-xl bg-accent-red/10 border border-accent-red/30">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-accent-red shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-accent-red">Insufficient USDC Balance</p>
+              <p className="text-xs text-text-secondary mt-1">
+                You need ${requiredAmount.toFixed(2)} USDC but only have ${formattedBalance}.
+              </p>
+            </div>
+          </div>
         </div>
         <Button disabled className="w-full">
           Insufficient Balance
@@ -93,121 +110,108 @@ export function ApprovalFlow({
     );
   }
 
+  // Already approved - show single action button
+  if (hasEnoughAllowance) {
+    return (
+      <TransactionButton
+        onClick={onAction}
+        isPending={actionIsPending}
+        isConfirming={actionIsConfirming}
+        isSuccess={actionIsSuccess}
+        error={actionError}
+        hash={actionHash}
+        onReset={actionReset}
+        onSuccess={actionOnSuccess}
+        pendingText="Confirm in wallet..."
+        confirmingText={actionConfirmingText}
+        successMessage={actionSuccessMessage}
+        className="w-full"
+        size="lg"
+        disabled={disabled}
+      >
+        {actionLabel}
+      </TransactionButton>
+    );
+  }
+
+  // Need approval flow
   return (
     <div className="space-y-4">
-      {/* Step Indicator */}
-      {!hasEnoughAllowance && (
-        <div className="flex items-center gap-2 text-sm">
-          <StepIndicator
-            step={1}
-            label="Approve USDC"
-            isActive={currentStep === "approve"}
-            isComplete={hasEnoughAllowance}
-          />
-          <ChevronRight className="h-4 w-4 text-text-tertiary" />
-          <StepIndicator
-            step={2}
-            label={actionLabel}
-            isActive={currentStep === "action"}
-            isComplete={actionIsSuccess}
-          />
-        </div>
-      )}
-
-      {/* Approval Step */}
-      {currentStep === "approve" && !hasEnoughAllowance && (
-        <div className="space-y-3">
-          <p className="text-sm text-text-secondary">
-            Allow SnapBounty to use your USDC for creating bounties.
-          </p>
-          <TransactionButton
-            onClick={approveMax}
-            isPending={approveIsPending}
-            isConfirming={approveIsConfirming}
-            isSuccess={approveIsSuccess}
-            error={approveError}
-            hash={approveHash}
-            onReset={resetApprove}
-            pendingText="Approve in wallet..."
-            confirmingText="Approving USDC..."
-            successMessage="USDC spending approved!"
-            className="w-full"
-            disabled={disabled}
+      {/* Compact two-step indicator */}
+      <div className="flex items-center justify-center gap-2">
+        {/* Step 1 */}
+        <div className="flex flex-col items-center gap-1">
+          <div
+            className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all",
+              currentStep === "approve"
+                ? "bg-accent-green text-bg-primary ring-2 ring-accent-green/30 ring-offset-2 ring-offset-bg-primary"
+                : "bg-accent-green text-bg-primary"
+            )}
           >
-            Approve USDC
-          </TransactionButton>
+            {hasEnoughAllowance ? <Check className="h-4 w-4" /> : "1"}
+          </div>
+          <span className="text-[11px] font-medium text-text-secondary">Approve</span>
         </div>
-      )}
 
-      {/* Action Step */}
-      {(currentStep === "action" || hasEnoughAllowance) && (
-        <TransactionButton
-          onClick={onAction}
-          isPending={actionIsPending}
-          isConfirming={actionIsConfirming}
-          isSuccess={actionIsSuccess}
-          error={actionError}
-          hash={actionHash}
-          onReset={actionReset}
-          pendingText="Confirm in wallet..."
-          confirmingText="Processing..."
-          successMessage="Transaction successful!"
-          className="w-full"
-          disabled={disabled || !hasEnoughAllowance}
-        >
-          {actionLabel}
-        </TransactionButton>
-      )}
+        {/* Connector line */}
+        <div className="w-12 sm:w-16 h-0.5 bg-border-default rounded-full overflow-hidden mb-5">
+          <div
+            className={cn(
+              "h-full bg-accent-green transition-all duration-500",
+              hasEnoughAllowance ? "w-full" : "w-0"
+            )}
+          />
+        </div>
 
-      {/* Balance & Allowance Info */}
-      <div className="text-xs text-text-tertiary text-center space-y-1">
-        <p>Balance: ${formattedBalance} USDC</p>
-        <p>
-          Allowance: {allowance > 0n ? `$${formatUnits(allowance, 6)}` : "Not approved"} USDC
-          {hasEnoughAllowance && <span className="text-accent-green ml-1">✓</span>}
-        </p>
+        {/* Step 2 */}
+        <div className="flex flex-col items-center gap-1">
+          <div
+            className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all",
+              currentStep === "action"
+                ? "bg-accent-green/20 text-accent-green border-2 border-accent-green"
+                : "bg-bg-elevated text-text-tertiary border border-border-default"
+            )}
+          >
+            2
+          </div>
+          <span className="text-[11px] font-medium text-text-secondary">Confirm</span>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function StepIndicator({
-  step,
-  label,
-  isActive,
-  isComplete,
-}: {
-  step: number;
-  label: string;
-  isActive: boolean;
-  isComplete: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <div
-        className={cn(
-          "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-          isComplete
-            ? "bg-accent-green text-bg-primary"
-            : isActive
-            ? "bg-accent-green/20 text-accent-green border border-accent-green"
-            : "bg-bg-elevated text-text-tertiary"
-        )}
-      >
-        {isComplete ? <Check className="h-3 w-3" /> : step}
+      {/* Approval explanation - more compact */}
+      <div className="p-3 rounded-xl bg-accent-blue/5 border border-accent-blue/20">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-accent-blue/10 flex items-center justify-center shrink-0">
+            <Shield className="h-4 w-4 text-accent-blue" />
+          </div>
+          <p className="text-xs text-text-secondary leading-relaxed">
+            Approve SnapBounty to access your USDC. This is a one-time setup.
+          </p>
+        </div>
       </div>
-      <span
-        className={cn(
-          "text-sm",
-          isActive ? "text-text-primary" : isComplete ? "text-accent-green" : "text-text-tertiary"
-        )}
+
+      {/* Approval button */}
+      <TransactionButton
+        onClick={approveMax}
+        isPending={approveIsPending}
+        isConfirming={approveIsConfirming}
+        isSuccess={approveIsSuccess}
+        error={approveError}
+        hash={approveHash}
+        onReset={resetApprove}
+        pendingText="Confirm in wallet..."
+        confirmingText="Approving..."
+        successMessage="Approved!"
+        className="w-full"
+        size="lg"
+        disabled={disabled}
       >
-        {label}
-      </span>
+        Approve USDC
+      </TransactionButton>
     </div>
   );
 }
 
 export default ApprovalFlow;
-
-

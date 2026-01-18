@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS bounties (
   difficulty TEXT NOT NULL CHECK (difficulty IN ('beginner', 'intermediate', 'advanced')),
   reward DECIMAL(20, 8) NOT NULL,
   reward_token TEXT NOT NULL DEFAULT 'USDC',
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'claimed', 'submitted', 'completed', 'cancelled')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'claimed', 'submitted', 'completed', 'cancelled', 'disputed')),
   deadline TIMESTAMPTZ,
   tags TEXT[] DEFAULT '{}',
   acceptance_criteria TEXT NOT NULL,
@@ -188,4 +188,9 @@ CREATE POLICY "Users can update own notifications" ON notifications
       SELECT id FROM users WHERE wallet_address = current_setting('request.jwt.claims', true)::json->>'wallet_address'
     )
   );
+
+
+
+
+
 
