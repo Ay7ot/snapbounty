@@ -59,6 +59,7 @@ import {
   createDispute,
   submitCreatorEvidence,
   getDisputeByContractId,
+  resolveDisputeRecord,
   type Dispute as DisputeRecord,
 } from "@/lib/actions/disputes";
 import { cn } from "@/lib/utils";
@@ -251,9 +252,12 @@ export function BountyDetail({ bounty, submissions = [], onRefresh }: BountyDeta
     setCreatorEvidence("");
   };
 
-  const handleResolveSuccess = async () => {
+  const handleResolveSuccess = async (resolution: "hunter_wins" | "creator_wins" | "split") => {
     if (contractBountyId) {
+      // Update bounty status to completed
       await updateBountyStatusByContractId(contractBountyId, "completed");
+      // Update dispute record with resolution
+      await resolveDisputeRecord(contractBountyId, resolution);
     }
     handleRefresh();
   };
@@ -423,7 +427,7 @@ export function BountyDetail({ bounty, submissions = [], onRefresh }: BountyDeta
                   hash={resolveDisputeHook.hash}
                   onReset={resolveDisputeHook.reset}
                   successMessage="Resolved for hunter"
-                  onSuccess={handleResolveSuccess}
+                  onSuccess={() => handleResolveSuccess("hunter_wins")}
                   className="w-full"
                   disabled={!contractBountyId}
                 >
@@ -445,7 +449,7 @@ export function BountyDetail({ bounty, submissions = [], onRefresh }: BountyDeta
                   onReset={resolveDisputeHook.reset}
                   variant="danger"
                   successMessage="Resolved for creator"
-                  onSuccess={handleResolveSuccess}
+                  onSuccess={() => handleResolveSuccess("creator_wins")}
                   className="w-full"
                   disabled={!contractBountyId}
                 >
@@ -464,7 +468,7 @@ export function BountyDetail({ bounty, submissions = [], onRefresh }: BountyDeta
                   onReset={resolveDisputeHook.reset}
                   variant="secondary"
                   successMessage="Split resolution"
-                  onSuccess={handleResolveSuccess}
+                  onSuccess={() => handleResolveSuccess("split")}
                   className="w-full"
                   disabled={!contractBountyId}
                 >
@@ -486,7 +490,7 @@ export function BountyDetail({ bounty, submissions = [], onRefresh }: BountyDeta
               hash={autoResolveHook.hash}
               onReset={autoResolveHook.reset}
               successMessage="Dispute auto-resolved"
-              onSuccess={handleResolveSuccess}
+              onSuccess={() => handleResolveSuccess("hunter_wins")}
               className="w-full"
               disabled={!contractBountyId}
             >
